@@ -2,52 +2,88 @@
 
 ## Task Completion Requirements
 
-- Both `bun lint` and `bun typecheck` must pass before considering tasks completed.
-- NEVER run `bun test`. Always use `bun run test` (runs Vitest).
+- `bun run typecheck` must pass before considering a task complete.
+- `bun run build` must pass before considering a task complete.
+- `bun run test` must pass before considering a task complete.
+- `bun run lint` exists at the repo root. Do not claim lint verification unless you actually ran it.
 
 ## Project Snapshot
 
-T3 Code is a minimal web GUI for using code agents like Codex and Claude Code (coming soon).
+Power Desk is a Codex-first, desktop-hosted workbench for Power Platform delivery tasks.
 
-This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
+The active runtime is a Bun workspace monorepo with:
+
+- `apps/server`: product runtime, Codex app-server broker, provider orchestration, WebSocket Native API, and static web serving
+- `apps/web`: React/Vite workbench UI for threads, chat, plans, activity, diffs, and settings
+- `apps/desktop`: thin Electron shell that starts the backend and exposes native-only bridge APIs
+- `apps/marketing`: Astro marketing site, separate from the desktop product runtime
+- `packages/contracts`: shared schemas, WebSocket envelopes, Native API contracts, orchestration events, and desktop bridge types
+- `packages/shared`: shared runtime helpers exposed through explicit subpaths
+
+The `apps/*` and `packages/*` workspace is the active architecture. There is no primary `app/*` runtime path in the current tree.
+
+## Planning Baseline
+
+The current product-planning baseline lives under `plan/`:
+
+- `plan/2026-03-08-00-power-desk-master-roadmap.plan.md`
+- `plan/2026-03-08-01-foundation-and-shell.plan.md`
+- `plan/2026-03-08-02-tool-runtime-and-adapters.plan.md`
+- `plan/2026-03-08-03-agent-orchestration-and-ux.plan.md`
+- `plan/2026-03-08-04-browser-automation-lane.plan.md`
+- `plan/2026-03-08-05-hardening-packaging-and-operations.plan.md`
+
+Use those plans as the current MVP scope and sequencing baseline when making architectural tradeoffs.
 
 ## Core Priorities
 
-1. Performance first.
-2. Reliability first.
-3. Keep behavior predictable under load and during failures (session restarts, reconnects, partial streams).
-
-If a tradeoff is required, choose correctness and robustness over short-term convenience.
+1. Correctness before convenience.
+2. Predictable session, orchestration, and transport behavior under reconnects, restarts, and partial failures.
+3. Keep the desktop shell thin. Product logic belongs in `apps/server`, not Electron main.
+4. Keep the web UI transport-bound to the Native API and pushed domain events, not preload IPC for business logic.
+5. Treat browser automation as a fallback lane, not the default path for workflows that already have CLI, API, or docs-backed tooling.
 
 ## Maintainability
 
-Long term maintainability is a core priority. If you add new functionality, first check if there are shared logic that can be extracted to a separate module. Duplicate logic across mulitple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
+- Prefer extracting shared logic into `packages/contracts` or `packages/shared` instead of duplicating code across apps.
+- Keep `packages/contracts` schema/data only. Do not put filesystem, process, or adapter logic there.
+- Keep `packages/shared` utility-oriented. Do not add a catch-all barrel export.
+- Extend existing server services and Effect layers instead of bypassing them with ad hoc globals or cross-module state.
+- If a feature only exists because of the desktop host, keep it behind the preload bridge and keep that bridge narrow.
 
 ## Package Roles
 
-- `apps/server`: Node.js WebSocket server. Wraps Codex app-server (JSON-RPC over stdio), serves the React web app, and manages provider sessions.
-- `apps/web`: React/Vite UI. Owns session UX, conversation/event rendering, and client-side state. Connects to the server via WebSocket.
-- `packages/contracts`: Shared effect/Schema schemas and TypeScript contracts for provider events, WebSocket protocol, and model/session types. Keep this package schema-only — no runtime logic.
-- `packages/shared`: Shared runtime utilities consumed by both server and web. Uses explicit subpath exports (e.g. `@t3tools/shared/git`) — no barrel index.
+- `apps/server`: owns session state, provider runtime integration, orchestration, persistence, and WebSocket request handling.
+- `apps/web`: renders the workbench UI against the WebSocket Native API and pushed orchestration/provider events.
+- `apps/desktop`: owns the Electron window, single-instance lock, backend child lifecycle, dialogs, menus, updates, and shell integration.
+- `apps/marketing`: owns the public-facing marketing site only.
+- `packages/contracts`: owns shared type-safe contracts between server, web, and desktop.
+- `packages/shared`: owns reusable runtime helpers such as process execution, timestamps, ports, user-data paths, and model helpers.
 
-## Codex App Server (Important)
+## Server Architecture
 
-T3 Code is currently Codex-first. The server starts `codex app-server` (JSON-RPC over stdio) per provider session, then streams structured events to the browser through WebSocket push messages.
+Power Desk starts `codex app-server` from `apps/server` for provider-backed sessions.
 
-How we use it in this codebase:
+Relevant current server entry points:
 
-- Session startup/resume and turn lifecycle are brokered in `apps/server/src/codexAppServerManager.ts`.
-- Provider dispatch and thread event logging are coordinated in `apps/server/src/providerManager.ts`.
-- WebSocket server routes NativeApi methods in `apps/server/src/wsServer.ts`.
-- Web app consumes orchestration domain events via WebSocket push on channel `orchestration.domainEvent` (provider runtime activity is projected into orchestration events server-side).
+- `apps/server/src/codexAppServerManager.ts`: Codex app-server process lifecycle, JSON-RPC wiring, approvals, and user-input handling
+- `apps/server/src/provider/Layers/ProviderService.ts`: cross-provider session routing, validation, recovery, and event fan-out
+- `apps/server/src/provider/Layers/ProviderAdapterRegistry.ts`: provider-to-adapter lookup
+- `apps/server/src/serverLayers.ts`: composition root for provider, orchestration, git, terminal, and telemetry layers
+- `apps/server/src/wsServer.ts`: HTTP/WebSocket server, Native API routing, and static asset serving
+- `apps/server/src/orchestration/*`: orchestration engine, reactors, projections, and checkpoint flow
 
-Docs:
+The web client consumes the server through `apps/web/src/nativeApi.ts` and `apps/web/src/wsNativeApi.ts`. Preserve that transport boundary.
 
-- Codex App Server docs: https://developers.openai.com/codex/sdk/#app-server
+## Power Desk-Specific Notes
 
-## Reference Repos
+- Power Platform adapters and tool integrations live server-side and should feed evidence-backed results into the workbench.
+- Desktop is the primary delivery surface in the current cut even though the web app is structurally separate.
+- The desktop preload bridge is for native concerns only: app info, folder picking, shell-open, update state, and menu actions.
+- Browser parity is structurally possible later, but it is not the current product target.
 
-- Open-source Codex repo: https://github.com/openai/codex
-- Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
+## Skills
 
-Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
+This repo adds one project-specific frontend expectation.
+
+- `uncodixfy`: use it whenever generating or revising frontend UI code so the workbench stays restrained, product-like, and avoids generic AI dashboard patterns.

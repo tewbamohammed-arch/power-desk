@@ -1,28 +1,64 @@
-# T3 Code
+# Power Desk
 
-T3 Code is a minimal web GUI for coding agents. Currently Codex-first, with Claude Code support coming soon.
+Power Desk is a Codex-first, desktop-hosted web workbench for Power Platform delivery tasks.
 
-## How to use
+## Active architecture
 
-> [!WARNING]
-> You need to have [Codex CLI](https://github.com/openai/codex) installed and authorized for T3 Code to work.
+- `apps/server`: Codex session broker, Power Desk tool runtime, WebSocket Native API, and static web serving
+- `apps/web`: React/Vite workbench with thread list, chat timeline, composer, activity, evidence, and settings
+- `apps/desktop`: Electron shell that starts the server, loads the web app, and exposes native-only bridge APIs
+- `packages/contracts`: shared contracts, schemas, session types, and event envelopes
+- `packages/shared`: shared helpers for process execution, timestamps, user-data paths, ports, and local knowledge
 
-```bash
-npx t3
+The desktop app is the primary delivery surface in the current cut. Browser parity is structurally possible later, but it is not the target right now.
+
+## Current product loop
+
+1. Open the desktop shell.
+2. Confirm workspace and tenant settings.
+3. Start a thread.
+4. Send a delivery question or implementation request.
+5. Review Codex output alongside evidence, constraints, and tool activity captured from the Power Desk tool runtime.
+
+## Local development
+
+```powershell
+bun install
+bun run dev
 ```
 
-You can also just install the desktop app. It's cooler.
+Useful commands:
 
-Install the [desktop app from the Releases page](https://github.com/pingdotgg/t3code/releases)
+- `bun run dev:web`
+- `bun run dev:server`
+- `bun run typecheck`
+- `bun run build`
+- `bun run test`
+- `bun run --cwd apps/desktop smoke`
 
-## Some notes
+`bun run dev` starts the desktop dev supervisor in `apps/desktop/scripts/dev-electron.mjs`. It launches the web dev server, watches the Electron shell output, and relaunches a single Electron instance without the old `nodemon` duplicate-window behavior.
 
-We are very very early in this project. Expect bugs.
+## Runtime notes
 
-We are not accepting contributions yet.
+- The server starts `codex app-server` per provider-backed session.
+- The web client talks to the server over a single WebSocket connection.
+- Power Platform adapters for repo, PAC, Dataverse, and docs live server-side.
+- The Electron preload bridge is limited to native concerns such as folder picking, update state, and opening external URLs.
 
-## If you REALLY want to contribute still.... read this first
+## Settings and user data
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+Power Desk stores local settings and session data in the user data directory:
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+```text
+%AppData%\Power Desk\
+```
+
+That directory contains:
+
+- `settings.json`
+- `sessions.json`
+- `activity.log.jsonl`
+
+## Status
+
+This repo is still an active migration. The new `apps/*` and `packages/*` workspace is the active architecture, while some legacy files can remain in the worktree until final cleanup is safe.
