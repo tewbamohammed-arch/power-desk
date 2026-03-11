@@ -109,11 +109,19 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.port, 4010);
       assert.equal(resolvedConfig?.host, "0.0.0.0");
       assert.equal(resolvedConfig?.stateDir, resolveExpectedStateDir("/tmp/t3-cli-state"));
+      assert.equal(resolvedConfig?.diagnostics.stateDir, resolveExpectedStateDir("/tmp/t3-cli-state"));
+      assert.equal(
+        resolvedConfig?.diagnostics.serverLogPath,
+        Path.join(resolveExpectedStateDir("/tmp/t3-cli-state"), "logs", "server.log"),
+      );
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://127.0.0.1:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "auth-secret");
       assert.equal(resolvedConfig?.autoBootstrapProjectFromCwd, false);
       assert.equal(resolvedConfig?.logWebSocketEvents, true);
+      assert.equal(typeof resolvedConfig?.runId, "string");
+      assert.equal(resolvedConfig?.runId.length, 12);
+      assert.equal(typeof resolvedConfig?.startedAt, "string");
       assert.equal(stop.mock.calls.length, 1);
     }),
   );
@@ -144,6 +152,10 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.port, 4999);
       assert.equal(resolvedConfig?.host, "100.88.10.4");
       assert.equal(resolvedConfig?.stateDir, resolveExpectedStateDir("/tmp/t3-env-state"));
+      assert.equal(
+        resolvedConfig?.diagnostics.terminalLogsDir,
+        Path.join(resolveExpectedStateDir("/tmp/t3-env-state"), "logs", "terminals"),
+      );
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://localhost:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "env-token");
@@ -207,6 +219,7 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.mode, "desktop");
       assert.equal(typeof resolvedConfig?.authToken, "string");
       assert.equal(resolvedConfig?.authToken?.length, 48);
+      assert.equal(resolvedConfig?.diagnostics.providerLogsDir.endsWith(Path.join("logs", "provider")), true);
     }),
   );
 

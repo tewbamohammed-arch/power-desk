@@ -6,20 +6,46 @@
  *
  * @module ServerConfig
  */
+import path from "node:path";
+
 import { Effect, FileSystem, Layer, Path, ServiceMap } from "effect";
 
 export const DEFAULT_PORT = 3773;
 
 export type RuntimeMode = "web" | "desktop";
 
+export interface ServerDiagnosticsPathsShape {
+  readonly stateDir: string;
+  readonly logsDir: string;
+  readonly serverLogPath: string;
+  readonly providerLogsDir: string;
+  readonly terminalLogsDir: string;
+}
+
+export const resolveServerDiagnosticsPaths = (
+  stateDir: string,
+): ServerDiagnosticsPathsShape => {
+  const logsDir = path.join(stateDir, "logs");
+  return {
+    stateDir,
+    logsDir,
+    serverLogPath: path.join(logsDir, "server.log"),
+    providerLogsDir: path.join(logsDir, "provider"),
+    terminalLogsDir: path.join(logsDir, "terminals"),
+  };
+};
+
 /**
  * ServerConfigShape - Process/runtime configuration required by the server.
  */
 export interface ServerConfigShape {
   readonly mode: RuntimeMode;
+  readonly runId: string;
+  readonly startedAt: string;
   readonly port: number;
   readonly host: string | undefined;
   readonly cwd: string;
+  readonly diagnostics: ServerDiagnosticsPathsShape;
   readonly keybindingsConfigPath: string;
   readonly stateDir: string;
   readonly staticDir: string | undefined;
@@ -41,9 +67,13 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
       ServerConfig,
       Effect.gen(function* () {
         const path = yield* Path.Path;
+        const diagnostics = resolveServerDiagnosticsPaths(statedir);
         return {
           cwd,
           stateDir: statedir,
+          runId: "test-run-id",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          diagnostics,
           mode: "web",
           autoBootstrapProjectFromCwd: false,
           logWebSocketEvents: false,

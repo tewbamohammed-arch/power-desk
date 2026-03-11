@@ -12,6 +12,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { NetService } from "@t3tools/shared/Net";
 import {
   DEFAULT_PORT,
+  resolveServerDiagnosticsPaths,
   resolveStaticDir,
   ServerConfig,
   type RuntimeMode,
@@ -174,6 +175,7 @@ const ServerConfigLive = (input: CliInput) =>
       const staticDir = devUrl ? undefined : yield* cliConfig.resolveStaticDir;
       const { join } = yield* Path.Path;
       const keybindingsConfigPath = join(stateDir, "keybindings.json");
+      const diagnostics = resolveServerDiagnosticsPaths(stateDir);
       const host =
         Option.getOrUndefined(input.host) ??
         env.host ??
@@ -181,8 +183,11 @@ const ServerConfigLive = (input: CliInput) =>
 
       const config: ServerConfigShape = {
         mode,
+        runId: Crypto.randomBytes(6).toString("hex"),
+        startedAt: new Date().toISOString(),
         port,
         cwd: cliConfig.cwd,
+        diagnostics,
         keybindingsConfigPath,
         host,
         stateDir,

@@ -93,7 +93,19 @@ function isoAt(offsetSeconds: number): string {
 
 function createBaseServerConfig(): ServerConfig {
   return {
+    runtime: {
+      mode: "desktop",
+      runId: "browser-test-run",
+      startedAt: NOW_ISO,
+    },
     cwd: "/repo/project",
+    diagnostics: {
+      stateDir: "/repo/project/.t3code",
+      logsDir: "/repo/project/.t3code/logs",
+      serverLogPath: "/repo/project/.t3code/logs/server.log",
+      providerLogsDir: "/repo/project/.t3code/logs/provider",
+      terminalLogsDir: "/repo/project/.t3code/logs/terminals",
+    },
     keybindingsConfigPath: "/repo/project/.t3code-keybindings.json",
     keybindings: [],
     issues: [],

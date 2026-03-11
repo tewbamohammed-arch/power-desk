@@ -8,7 +8,7 @@ import { Effect, Exit, Layer, PlatformError, PubSub, Scope, Stream } from "effec
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { createServer } from "./wsServer";
 import WebSocket from "ws";
-import { ServerConfig, type ServerConfigShape } from "./config";
+import { resolveServerDiagnosticsPaths, ServerConfig, type ServerConfigShape } from "./config";
 import { makeServerProviderLayer, makeServerRuntimeServicesLayer } from "./serverLayers";
 
 import {
@@ -365,6 +365,35 @@ function expectAvailableEditors(value: unknown): void {
   }
 }
 
+function expectedServerConfig(input: {
+  stateDir: string;
+  cwd: string;
+  keybindingsConfigPath: string;
+  keybindings: ResolvedKeybindingsConfig;
+  issues: Array<{ kind: string; index?: number; message: unknown }>;
+}) {
+  return {
+    runtime: {
+      mode: "web",
+      runId: "test-run-id",
+      startedAt: "2026-01-01T00:00:00.000Z",
+    },
+    cwd: input.cwd,
+    diagnostics: {
+      stateDir: input.stateDir,
+      logsDir: path.join(input.stateDir, "logs"),
+      serverLogPath: path.join(input.stateDir, "logs", "server.log"),
+      providerLogsDir: path.join(input.stateDir, "logs", "provider"),
+      terminalLogsDir: path.join(input.stateDir, "logs", "terminals"),
+    },
+    keybindingsConfigPath: input.keybindingsConfigPath,
+    keybindings: input.keybindings,
+    issues: input.issues,
+    providers: defaultProviderStatuses,
+    availableEditors: expect.any(Array),
+  };
+}
+
 describe("WebSocket Server", () => {
   let server: Http.Server | null = null;
   let serverScope: Scope.Closeable | null = null;
@@ -413,9 +442,12 @@ describe("WebSocket Server", () => {
     const openLayer = Layer.succeed(Open, options.open ?? defaultOpenService);
     const serverConfigLayer = Layer.succeed(ServerConfig, {
       mode: "web",
+      runId: "test-run-id",
+      startedAt: "2026-01-01T00:00:00.000Z",
       port: 0,
       host: undefined,
       cwd: options.cwd ?? "/test/project",
+      diagnostics: resolveServerDiagnosticsPaths(stateDir),
       keybindingsConfigPath: path.join(stateDir, "keybindings.json"),
       stateDir,
       staticDir: options.staticDir,
@@ -750,14 +782,15 @@ describe("WebSocket Server", () => {
 
     const response = await sendRequest(ws, WS_METHODS.serverGetConfig);
     expect(response.error).toBeUndefined();
-    expect(response.result).toEqual({
-      cwd: "/my/workspace",
-      keybindingsConfigPath: keybindingsPath,
-      keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
-      issues: [],
-      providers: defaultProviderStatuses,
-      availableEditors: expect.any(Array),
-    });
+    expect(response.result).toEqual(
+      expectedServerConfig({
+        stateDir,
+        cwd: "/my/workspace",
+        keybindingsConfigPath: keybindingsPath,
+        keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+        issues: [],
+      }),
+    );
     expectAvailableEditors((response.result as { availableEditors: unknown }).availableEditors);
   });
 
@@ -847,14 +880,15 @@ describe("WebSocket Server", () => {
 
     const response = await sendRequest(ws, WS_METHODS.serverGetConfig);
     expect(response.error).toBeUndefined();
-    expect(response.result).toEqual({
-      cwd: "/my/workspace",
-      keybindingsConfigPath: keybindingsPath,
-      keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
-      issues: [],
-      providers: defaultProviderStatuses,
-      availableEditors: expect.any(Array),
-    });
+    expect(response.result).toEqual(
+      expectedServerConfig({
+        stateDir,
+        cwd: "/my/workspace",
+        keybindingsConfigPath: keybindingsPath,
+        keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+        issues: [],
+      }),
+    );
     expectAvailableEditors((response.result as { availableEditors: unknown }).availableEditors);
 
     const persistedConfig = JSON.parse(
@@ -878,19 +912,20 @@ describe("WebSocket Server", () => {
 
     const response = await sendRequest(ws, WS_METHODS.serverGetConfig);
     expect(response.error).toBeUndefined();
-    expect(response.result).toEqual({
-      cwd: "/my/workspace",
-      keybindingsConfigPath: keybindingsPath,
-      keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
-      issues: [
-        {
-          kind: "keybindings.malformed-config",
-          message: expect.stringContaining("expected JSON array"),
-        },
-      ],
-      providers: defaultProviderStatuses,
-      availableEditors: expect.any(Array),
-    });
+    expect(response.result).toEqual(
+      expectedServerConfig({
+        stateDir,
+        cwd: "/my/workspace",
+        keybindingsConfigPath: keybindingsPath,
+        keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+        issues: [
+          {
+            kind: "keybindings.malformed-config",
+            message: expect.stringContaining("expected JSON array"),
+          },
+        ],
+      }),
+    );
     expectAvailableEditors((response.result as { availableEditors: unknown }).availableEditors);
     expect(fs.readFileSync(keybindingsPath, "utf8")).toBe("{ not-json");
   });
@@ -1038,14 +1073,15 @@ describe("WebSocket Server", () => {
     const persistedConfig = JSON.parse(
       fs.readFileSync(keybindingsPath, "utf8"),
     ) as KeybindingsConfig;
-    expect(response.result).toEqual({
-      cwd: "/my/workspace",
-      keybindingsConfigPath: keybindingsPath,
-      keybindings: compileKeybindings(persistedConfig),
-      issues: [],
-      providers: defaultProviderStatuses,
-      availableEditors: expect.any(Array),
-    });
+    expect(response.result).toEqual(
+      expectedServerConfig({
+        stateDir,
+        cwd: "/my/workspace",
+        keybindingsConfigPath: keybindingsPath,
+        keybindings: compileKeybindings(persistedConfig),
+        issues: [],
+      }),
+    );
     expectAvailableEditors((response.result as { availableEditors: unknown }).availableEditors);
   });
 
@@ -1086,14 +1122,15 @@ describe("WebSocket Server", () => {
 
     const configResponse = await sendRequest(ws, WS_METHODS.serverGetConfig);
     expect(configResponse.error).toBeUndefined();
-    expect(configResponse.result).toEqual({
-      cwd: "/my/workspace",
-      keybindingsConfigPath: keybindingsPath,
-      keybindings: compileKeybindings(persistedConfig),
-      issues: [],
-      providers: defaultProviderStatuses,
-      availableEditors: expect.any(Array),
-    });
+    expect(configResponse.result).toEqual(
+      expectedServerConfig({
+        stateDir,
+        cwd: "/my/workspace",
+        keybindingsConfigPath: keybindingsPath,
+        keybindings: compileKeybindings(persistedConfig),
+        issues: [],
+      }),
+    );
     expectAvailableEditors(
       (configResponse.result as { availableEditors: unknown }).availableEditors,
     );

@@ -898,7 +898,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.serverGetConfig:
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
         return {
+          runtime: {
+            mode: serverConfig.mode,
+            runId: serverConfig.runId,
+            startedAt: serverConfig.startedAt,
+          },
           cwd,
+          diagnostics: serverConfig.diagnostics,
           keybindingsConfigPath,
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,

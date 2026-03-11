@@ -85,6 +85,8 @@ function SettingsRouteView() {
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
+  const [openingDiagnosticsPath, setOpeningDiagnosticsPath] = useState<string | null>(null);
+  const [openDiagnosticsError, setOpenDiagnosticsError] = useState<string | null>(null);
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
   >({
@@ -96,7 +98,9 @@ function SettingsRouteView() {
 
   const codexBinaryPath = settings.codexBinaryPath;
   const codexHomePath = settings.codexHomePath;
+  const diagnostics = serverConfigQuery.data?.diagnostics ?? null;
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
+  const runtime = serverConfigQuery.data?.runtime ?? null;
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -114,6 +118,22 @@ function SettingsRouteView() {
         setIsOpeningKeybindings(false);
       });
   }, [keybindingsConfigPath]);
+
+  const openDiagnosticsPath = useCallback((targetPath: string) => {
+    setOpenDiagnosticsError(null);
+    setOpeningDiagnosticsPath(targetPath);
+    const api = ensureNativeApi();
+    void api.shell
+      .openInEditor(targetPath, preferredTerminalEditor())
+      .catch((error) => {
+        setOpenDiagnosticsError(
+          error instanceof Error ? error.message : "Unable to open diagnostics path.",
+        );
+      })
+      .finally(() => {
+        setOpeningDiagnosticsPath((currentPath) => (currentPath === targetPath ? null : currentPath));
+      });
+  }, []);
 
   const addCustomModel = useCallback((provider: ProviderKind) => {
     const customModelInput = customModelInputByProvider[provider];
@@ -501,6 +521,88 @@ function SettingsRouteView() {
                 </p>
                 {openKeybindingsError ? (
                   <p className="text-xs text-destructive">{openKeybindingsError}</p>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Diagnostics</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Server-owned runtime identity and log paths for support and restart analysis.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-xs font-medium text-foreground">Run ID</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                      {runtime?.runId ?? "Resolving run id..."}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-xs font-medium text-foreground">Mode</p>
+                    <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                      {runtime?.mode ?? "resolving"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-xs font-medium text-foreground">Started</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                      {runtime?.startedAt ?? "Resolving start time..."}
+                    </p>
+                  </div>
+                </div>
+
+                {[
+                  {
+                    label: "State directory",
+                    path: diagnostics?.stateDir ?? null,
+                  },
+                  {
+                    label: "Server log",
+                    path: diagnostics?.serverLogPath ?? null,
+                  },
+                  {
+                    label: "Provider logs",
+                    path: diagnostics?.providerLogsDir ?? null,
+                  },
+                  {
+                    label: "Terminal logs",
+                    path: diagnostics?.terminalLogsDir ?? null,
+                  },
+                ].map((entry) => (
+                  <div
+                    key={entry.label}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-foreground">{entry.label}</p>
+                      <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                        {entry.path ?? "Resolving path..."}
+                      </p>
+                    </div>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={!entry.path || openingDiagnosticsPath === entry.path}
+                      onClick={() => {
+                        if (!entry.path) return;
+                        openDiagnosticsPath(entry.path);
+                      }}
+                    >
+                      {openingDiagnosticsPath === entry.path ? "Opening..." : "Open"}
+                    </Button>
+                  </div>
+                ))}
+
+                <p className="text-xs text-muted-foreground">
+                  Opens in your preferred editor selection so you can inspect logs without leaving
+                  the workbench.
+                </p>
+                {openDiagnosticsError ? (
+                  <p className="text-xs text-destructive">{openDiagnosticsError}</p>
                 ) : null}
               </div>
             </section>

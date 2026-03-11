@@ -46,8 +46,26 @@ export type ServerProviderStatus = typeof ServerProviderStatus.Type;
 
 const ServerProviderStatuses = Schema.Array(ServerProviderStatus);
 
+export const ServerRuntime = Schema.Struct({
+  mode: Schema.Literals(["web", "desktop"]),
+  runId: TrimmedNonEmptyString,
+  startedAt: IsoDateTime,
+});
+export type ServerRuntime = typeof ServerRuntime.Type;
+
+export const ServerDiagnosticsPaths = Schema.Struct({
+  stateDir: TrimmedNonEmptyString,
+  logsDir: TrimmedNonEmptyString,
+  serverLogPath: TrimmedNonEmptyString,
+  providerLogsDir: TrimmedNonEmptyString,
+  terminalLogsDir: TrimmedNonEmptyString,
+});
+export type ServerDiagnosticsPaths = typeof ServerDiagnosticsPaths.Type;
+
 export const ServerConfig = Schema.Struct({
+  runtime: ServerRuntime,
   cwd: TrimmedNonEmptyString,
+  diagnostics: ServerDiagnosticsPaths,
   keybindingsConfigPath: TrimmedNonEmptyString,
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
