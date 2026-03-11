@@ -118,3 +118,6 @@ The workbench only becomes useful when it can inspect environments, read repo st
 
 ## Next Phase Handoff
 Agent Orchestration and UX should inherit one stable runtime contract, one error taxonomy, one approval policy model, and one evidence model. The handoff is complete when the agent can plan against tool descriptors and the UI can render results, failures, and evidence without special logic for each adapter. Do not start Phase 3 until every measurable exit criterion above is satisfied.
+
+## Implementation References
+- No linked implementation commits yet.

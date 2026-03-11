@@ -118,3 +118,6 @@ Even with a good shell and strong adapters, the app will feel fragmented unless 
 
 ## Next Phase Handoff
 Browser Automation Lane should plug into the workbench as a deliberate exception path, not a default action source. The handoff is complete when the core UX can already plan, approve, execute, and explain work through CLI, API, and docs-backed tools, with a clear escalation point for UI-only workflows. Do not start Phase 4 until every measurable exit criterion above is satisfied.
+
+## Implementation References
+- No linked implementation commits yet.

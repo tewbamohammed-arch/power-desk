@@ -35,6 +35,15 @@ The current product-planning baseline lives under `plan/`:
 
 Use those plans as the current MVP scope and sequencing baseline when making architectural tradeoffs.
 
+<power-desk-exclusive>
+When a commit implements work from any `plan/*.md` file, update the end of the relevant `plan/*.md` file or files in an immediate follow-up.
+
+- Add or refresh an `Implementation References` section at the end of each relevant plan file.
+- Reference the concrete commit hash and a short implementation note, not just a vague status update.
+- If a plan file has no linked implementation yet, keep an explicit `No linked implementation commits yet.` note in that section.
+- Maintain this only for files under `plan/*.md`. Do not treat `.plans` paths as the source of truth for this bookkeeping.
+</power-desk-exclusive>
+
 ## Core Priorities
 
 1. Correctness before convenience.

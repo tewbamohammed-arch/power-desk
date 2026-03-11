@@ -122,3 +122,10 @@ The roadmap exists to keep a solo builder focused on the highest-leverage delive
 
 ## Next Phase Handoff
 Foundation and Shell should lock the host architecture, process boundaries, configuration model, and auth separation without re-litigating product scope. The handoff expectation is that Phase 1 converts this roadmap into concrete shell, startup flow, and shared type decisions that support multiple adapters and future agent workflows.
+
+## Implementation References
+- `9f967e8` `feat(foundation): Tighten desktop/server startup boundary` - moved startup/bootstrap ownership into `apps/server`, kept Electron focused on shell concerns, and introduced shared foundation contracts.
+- `cfb0f51` `feat(foundation): expose session state over native api` - added typed `AppSessionState` generation in `apps/server` and exposed it through the Native API.
+- `dd6b42e` `feat(foundation): push shell session state updates` - pushed session-state updates over WebSocket and surfaced startup/session status in the shell UI.
+- `537a904` `feat(foundation): expose server diagnostics baseline` - added server-owned runtime diagnostics metadata, log-path reporting, and a diagnostics baseline aligned with Scenario 8 handoff work.
+- `8c0a794` `fix(web): handle unavailable diagnostics state` - fixed the Settings diagnostics UI to handle older or not-yet-restarted backends without showing false in-progress states.

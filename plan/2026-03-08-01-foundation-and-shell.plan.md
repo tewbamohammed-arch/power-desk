@@ -106,3 +106,10 @@ If the shell, startup flow, auth boundaries, and process model remain ambiguous,
 
 ## Next Phase Handoff
 Tool Runtime and Adapters should inherit the fixed host boundaries, shared session types, startup flow, and logging schema from this phase. The handoff is complete when adapter authors can build against a stable shell contract instead of inventing their own runtime, auth, or diagnostics assumptions. Do not start Phase 2 until every measurable exit criterion above is satisfied.
+
+## Implementation References
+- `9f967e8` `feat(foundation): Tighten desktop/server startup boundary` - implemented the initial desktop/server split, added shared foundation contracts, and documented the boundary in `docs/adr-0001-desktop-server-boundary.md`.
+- `cfb0f51` `feat(foundation): expose session state over native api` - introduced `AppSessionState` creation and `server.getSessionState` so startup/session ownership lives in `apps/server`.
+- `dd6b42e` `feat(foundation): push shell session state updates` - added pushed session-state updates plus shell-visible startup/status UI without moving business logic into Electron.
+- `537a904` `feat(foundation): expose server diagnostics baseline` - added runtime diagnostics metadata, server-owned log paths, and a documented diagnostics baseline in `docs/adr-0002-server-diagnostics-baseline.md`.
+- `8c0a794` `fix(web): handle unavailable diagnostics state` - hardened the diagnostics surface so missing runtime metadata is shown as unavailable/restart-needed instead of a false loading state.

@@ -101,3 +101,6 @@ Some Power Platform and adjacent Microsoft surfaces remain UI-first. This phase 
 
 ## Next Phase Handoff
 Hardening, Packaging, and Operations should treat browser automation as a preview-capable but supportable lane with explicit flags, diagnostics coverage, and safe defaults. The handoff is complete when automation can be enabled, audited, and disabled without destabilizing the core workbench. Do not start Phase 5 until every measurable exit criterion above is satisfied.
+
+## Implementation References
+- No linked implementation commits yet.

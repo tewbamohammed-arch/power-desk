@@ -97,3 +97,6 @@ An MVP that only works on the builder's machine is still a prototype. This phase
 
 ## Next Phase Handoff
 This phase closes the roadmap pack and hands off to implementation and internal daily-use validation. The handoff is complete when the product can be installed on a fresh Windows workstation, configured with documented steps, exercised through the core scenarios, and debugged through exported support artifacts rather than builder memory. This roadmap pack is only complete when every measurable exit criterion above is satisfied.
+
+## Implementation References
+- No linked implementation commits yet.
