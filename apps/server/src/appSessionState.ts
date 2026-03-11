@@ -5,6 +5,7 @@ import type {
   AuthContext,
   AuthStatus,
   ModelProviderConfig,
+  OrchestrationThreadActivity,
   ServerProviderStatus,
   SessionHealthCheck,
   TenantProfile,
@@ -70,6 +71,66 @@ function createAuthContexts(providerStatuses: ReadonlyArray<ServerProviderStatus
       status: "unknown",
     },
   ];
+}
+
+function getApprovalRequestId(activity: OrchestrationThreadActivity): string | null {
+  if (!activity.payload || typeof activity.payload !== "object") {
+    return null;
+  }
+  const requestId = (activity.payload as Record<string, unknown>).requestId;
+  return typeof requestId === "string" ? requestId : null;
+}
+
+function getActivityDetail(activity: OrchestrationThreadActivity): string | null {
+  if (!activity.payload || typeof activity.payload !== "object") {
+    return null;
+  }
+  const detail = (activity.payload as Record<string, unknown>).detail;
+  return typeof detail === "string" ? detail : null;
+}
+
+function countPendingApprovalsForActivities(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): number {
+  const openApprovals = new Set<string>();
+  const orderedActivities = [...activities].toSorted((left, right) =>
+    left.createdAt.localeCompare(right.createdAt),
+  );
+
+  for (const activity of orderedActivities) {
+    const requestId = getApprovalRequestId(activity);
+    if (!requestId) {
+      continue;
+    }
+
+    if (activity.kind === "approval.requested") {
+      openApprovals.add(requestId);
+      continue;
+    }
+
+    if (activity.kind === "approval.resolved") {
+      openApprovals.delete(requestId);
+      continue;
+    }
+
+    if (
+      activity.kind === "provider.approval.respond.failed" &&
+      getActivityDetail(activity)?.includes("Unknown pending permission request")
+    ) {
+      openApprovals.delete(requestId);
+    }
+  }
+
+  return openApprovals.size;
+}
+
+export function countPendingApprovals(
+  threads: ReadonlyArray<{ readonly activities: ReadonlyArray<OrchestrationThreadActivity> }>,
+): number {
+  return threads.reduce(
+    (total, thread) => total + countPendingApprovalsForActivities(thread.activities),
+    0,
+  );
 }
 
 export function createAppSessionState({

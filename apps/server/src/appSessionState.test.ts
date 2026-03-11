@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ServerProviderStatus } from "@t3tools/contracts";
+import { EventId, type ServerProviderStatus } from "@t3tools/contracts";
 
-import { createAppSessionState } from "./appSessionState";
+import { countPendingApprovals, createAppSessionState } from "./appSessionState";
 
 const READY_PROVIDER: ServerProviderStatus = {
   provider: "codex",
@@ -88,5 +88,55 @@ describe("createAppSessionState", () => {
       checkedAt: "2026-03-11T12:00:00.000Z",
       message: "Codex CLI is not authenticated.",
     });
+  });
+
+  it("counts unresolved approvals across threads", () => {
+    expect(
+      countPendingApprovals([
+        {
+          activities: [
+            {
+              id: EventId.makeUnsafe("activity-1"),
+              kind: "approval.requested",
+              summary: "Command approval requested",
+              tone: "approval",
+              turnId: null,
+              payload: {
+                requestId: "approval-1",
+                requestKind: "command",
+              },
+              createdAt: "2026-03-11T12:00:00.000Z",
+            },
+            {
+              id: EventId.makeUnsafe("activity-2"),
+              kind: "approval.resolved",
+              summary: "Command approval resolved",
+              tone: "info",
+              turnId: null,
+              payload: {
+                requestId: "approval-1",
+              },
+              createdAt: "2026-03-11T12:01:00.000Z",
+            },
+          ],
+        },
+        {
+          activities: [
+            {
+              id: EventId.makeUnsafe("activity-3"),
+              kind: "approval.requested",
+              summary: "File-read approval requested",
+              tone: "approval",
+              turnId: null,
+              payload: {
+                requestId: "approval-2",
+                requestKind: "file-read",
+              },
+              createdAt: "2026-03-11T12:02:00.000Z",
+            },
+          ],
+        },
+      ]),
+    ).toBe(1);
   });
 });

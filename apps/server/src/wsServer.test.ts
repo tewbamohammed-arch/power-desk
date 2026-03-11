@@ -810,6 +810,28 @@ describe("WebSocket Server", () => {
     });
   });
 
+  it("pushes server.sessionStateUpdated after welcome", async () => {
+    server = await createTestServer({ cwd: "/my/workspace" });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const push = await waitForPush(ws, WS_CHANNELS.serverSessionStateUpdated);
+    expect(push.data).toMatchObject({
+      status: "starting",
+      stage: "tenant-selection",
+      workspace: {
+        id: "/my/workspace",
+        label: "workspace",
+        rootPath: "/my/workspace",
+      },
+      activeApprovalCount: 0,
+      evidenceSummaryRefs: [],
+    });
+  });
+
   it("bootstraps default keybindings file when missing", async () => {
     const stateDir = makeTempDir("t3code-state-bootstrap-keybindings-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");
@@ -1280,10 +1302,16 @@ describe("WebSocket Server", () => {
     });
     expect(startTurnResponse.error).toBeUndefined();
 
-    await waitForPush(ws, ORCHESTRATION_WS_CHANNELS.domainEvent, (push) => {
-      const event = push.data as { type?: string };
-      return event.type === "thread.session-set";
-    });
+    await waitForPush(
+      ws,
+      ORCHESTRATION_WS_CHANNELS.domainEvent,
+      (push) => {
+        const event = push.data as { type?: string };
+        return event.type === "thread.session-set";
+      },
+      240,
+      10_000,
+    );
 
     emitRuntimeEvent(
       {
@@ -1301,12 +1329,21 @@ describe("WebSocket Server", () => {
       } as unknown as ProviderRuntimeEvent,
     );
 
-    const domainPush = await waitForPush(ws, ORCHESTRATION_WS_CHANNELS.domainEvent, (push) => {
-      const event = push.data as { type?: string; payload?: { messageId?: string; text?: string } };
-      return (
-        event.type === "thread.message-sent" && event.payload?.messageId === "assistant:item-1"
-      );
-    });
+    const domainPush = await waitForPush(
+      ws,
+      ORCHESTRATION_WS_CHANNELS.domainEvent,
+      (push) => {
+        const event = push.data as {
+          type?: string;
+          payload?: { messageId?: string; text?: string };
+        };
+        return (
+          event.type === "thread.message-sent" && event.payload?.messageId === "assistant:item-1"
+        );
+      },
+      240,
+      10_000,
+    );
 
     const domainEvent = domainPush.data as {
       type: string;

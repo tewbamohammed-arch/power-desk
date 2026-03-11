@@ -213,6 +213,40 @@ describe("wsNativeApi", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("delivers and caches server.sessionStateUpdated payloads", async () => {
+    const { createWsNativeApi, onServerSessionStateUpdated } = await import("./wsNativeApi");
+
+    createWsNativeApi();
+    const listener = vi.fn();
+    onServerSessionStateUpdated(listener);
+
+    const payload = {
+      status: "starting",
+      stage: "tenant-selection",
+      workspace: {
+        id: "workspace-1",
+        label: "sp-power-desk",
+        rootPath: "C:/Users/TAR/Projects/sp-power-desk",
+        lastOpenedAt: "2026-03-11T12:00:00.000Z",
+      },
+      tenant: null,
+      auth: [],
+      healthChecks: [],
+      activeApprovalCount: 0,
+      evidenceSummaryRefs: [],
+      updatedAt: "2026-03-11T12:00:00.000Z",
+    } as const;
+    emitPush(WS_CHANNELS.serverSessionStateUpdated, payload);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(payload);
+
+    const lateListener = vi.fn();
+    onServerSessionStateUpdated(lateListener);
+    expect(lateListener).toHaveBeenCalledTimes(1);
+    expect(lateListener).toHaveBeenCalledWith(payload);
+  });
+
   it("forwards valid terminal and orchestration events", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { createWsNativeApi } = await import("./wsNativeApi");

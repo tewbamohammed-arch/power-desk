@@ -106,6 +106,38 @@ it.effect("accepts typed websocket push envelopes with sequence", () =>
   }),
 );
 
+it.effect("accepts server.sessionStateUpdated push envelopes", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWsResponse({
+      type: "push",
+      sequence: 2,
+      channel: WS_CHANNELS.serverSessionStateUpdated,
+      data: {
+        status: "starting",
+        stage: "tenant-selection",
+        workspace: {
+          id: "/tmp/workspace",
+          label: "workspace",
+          rootPath: "/tmp/workspace",
+          lastOpenedAt: "2026-03-11T12:00:00.000Z",
+        },
+        tenant: null,
+        auth: [],
+        healthChecks: [],
+        activeApprovalCount: 0,
+        evidenceSummaryRefs: [],
+        updatedAt: "2026-03-11T12:00:00.000Z",
+      },
+    });
+
+    if (!("type" in parsed) || parsed.type !== "push") {
+      assert.fail("expected websocket response to decode as a push envelope");
+    }
+
+    assert.strictEqual(parsed.channel, WS_CHANNELS.serverSessionStateUpdated);
+  }),
+);
+
 it.effect("rejects push envelopes when channel payload does not match the channel schema", () =>
   Effect.gen(function* () {
     const result = yield* Effect.exit(
