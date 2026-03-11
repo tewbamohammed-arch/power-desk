@@ -41,7 +41,7 @@ An MVP that only works on the builder's machine is still a prototype. This phase
 
 ## Workstreams
 - Packaging and distribution:
-  - Define the internal Windows packaging strategy, install prerequisites, and upgrade path for a `.NET/WinUI` desktop app.
+  - Define the internal Windows packaging strategy, install prerequisites, and upgrade path for the Electron-hosted desktop product.
   - Define first-run setup expectations for config location, secure storage initialization, and adapter health verification.
   - Define how updates are delivered without requiring undocumented manual steps from the builder.
 - Configuration migration and feature flags:
@@ -99,4 +99,5 @@ An MVP that only works on the builder's machine is still a prototype. This phase
 This phase closes the roadmap pack and hands off to implementation and internal daily-use validation. The handoff is complete when the product can be installed on a fresh Windows workstation, configured with documented steps, exercised through the core scenarios, and debugged through exported support artifacts rather than builder memory. This roadmap pack is only complete when every measurable exit criterion above is satisfied.
 
 ## Implementation References
+- Decision baseline: `docs/adr-0003-t3code-augmentation-baseline.md` - keeps packaging and operations planning anchored on the Electron-hosted product baseline established for the current workspace.
 - No linked implementation commits yet.

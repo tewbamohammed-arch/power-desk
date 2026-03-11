@@ -94,7 +94,7 @@ Some Power Platform and adjacent Microsoft surfaces remain UI-first. This phase 
   - Mitigation: define redaction and storage rules consistent with the diagnostics strategy before implementation.
 
 ## Open Questions Deferred
-- Whether Playwright should be hosted through a .NET wrapper, a sidecar process, or an adapter-owned runtime.
+- Whether Playwright should be hosted through a sidecar process, a server-owned runtime module, or an adapter-owned runtime.
 - Which maker-portal workflows are stable enough to justify automation in the first MVP.
 - Whether screenshot redaction should happen at capture time or during diagnostics export.
 - How much DOM capture is useful before transcripts become too heavy for support workflows.
@@ -103,4 +103,5 @@ Some Power Platform and adjacent Microsoft surfaces remain UI-first. This phase 
 Hardening, Packaging, and Operations should treat browser automation as a preview-capable but supportable lane with explicit flags, diagnostics coverage, and safe defaults. The handoff is complete when automation can be enabled, audited, and disabled without destabilizing the core workbench. Do not start Phase 5 until every measurable exit criterion above is satisfied.
 
 ## Implementation References
+- Decision baseline: `docs/adr-0003-t3code-augmentation-baseline.md` - keeps browser automation planning anchored on the current Electron shell plus server-owned runtime rather than a separate greenfield host stack.
 - No linked implementation commits yet.

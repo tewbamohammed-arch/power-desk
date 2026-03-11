@@ -10,6 +10,7 @@ The roadmap exists to keep a solo builder focused on the highest-leverage delive
 - Product definition: "Power Desk is a Windows-first agentic desktop workbench for Power Platform delivery work, combining repo awareness, tenant-aware tools, CLI/API/MCP adapters, and optional browser automation."
 - Audience: solo technical builder first, future-ready for small internal teams.
 - Primary goals: reduce feasibility-analysis overhead, reduce context switching, improve delivery throughput, and improve stakeholder communication around constraints.
+- Delivery baseline: Power Desk is an augmentation of the existing T3 Code Bun workspace, not a greenfield desktop rewrite.
 - Non-goals for MVP: multi-user collaboration, full cloud SaaS control plane, cross-platform parity, desktop automation beyond browser, and a full enterprise governance suite.
 - Milestones:
   - M1: runnable desktop shell with workspace and tenant context.
@@ -64,7 +65,7 @@ The roadmap exists to keep a solo builder focused on the highest-leverage delive
 - Generic AI chat features that are not tied to delivery workflows, evidence, or tool execution.
 
 ## Dependencies
-- Project root is currently empty, so the pack must establish the starting structure.
+- The existing T3 Code Bun workspace is the implementation baseline, so the pack must guide augmentation of the current `apps/*` and `packages/*` architecture rather than propose a replacement stack.
 - The pack assumes an internal MVP posture, a solo builder audience, and Windows as the primary execution environment.
 - Each downstream phase depends on the master roadmap for milestone order, adapter priorities, model-lane separation, and acceptance scenario coverage.
 
@@ -74,7 +75,7 @@ The roadmap exists to keep a solo builder focused on the highest-leverage delive
   - State the primary audience as a solo technical builder while leaving room for later small-team adoption.
   - Capture explicit non-goals so multi-user SaaS, full governance suites, and cross-platform work do not dilute the MVP.
 - Architecture and lane separation:
-  - Fix Windows-first `.NET/WinUI` as the desktop direction and keep WebView2 limited to targeted embedded surfaces.
+  - Fix the existing Electron desktop host plus Bun server plus React workbench as the MVP delivery direction.
   - Separate model-provider concerns from tool-runtime concerns so future model changes do not force adapter redesign.
   - Keep Codex and future Operator lanes distinct so browser automation remains optional and non-blocking.
 - Sequencing and milestone control:
@@ -124,6 +125,7 @@ The roadmap exists to keep a solo builder focused on the highest-leverage delive
 Foundation and Shell should lock the host architecture, process boundaries, configuration model, and auth separation without re-litigating product scope. The handoff expectation is that Phase 1 converts this roadmap into concrete shell, startup flow, and shared type decisions that support multiple adapters and future agent workflows.
 
 ## Implementation References
+- Decision baseline: `docs/adr-0003-t3code-augmentation-baseline.md` - records that Power Desk is an augmentation of the existing T3 Code workspace, not a greenfield desktop rewrite.
 - `9f967e8` `feat(foundation): Tighten desktop/server startup boundary` - moved startup/bootstrap ownership into `apps/server`, kept Electron focused on shell concerns, and introduced shared foundation contracts.
 - `cfb0f51` `feat(foundation): expose session state over native api` - added typed `AppSessionState` generation in `apps/server` and exposed it through the Native API.
 - `dd6b42e` `feat(foundation): push shell session state updates` - pushed session-state updates over WebSocket and surfaced startup/session status in the shell UI.
