@@ -4,21 +4,33 @@ import * as FS from "node:fs";
 import * as OS from "node:os";
 import * as Path from "node:path";
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  protocol,
+  shell,
+} from "electron";
 import type { MenuItemConstructorOptions } from "electron";
-import * as Effect from "effect/Effect";
-import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
+import type {
+  DesktopServerBootstrap,
+  DesktopTheme,
+  DesktopUpdateActionResult,
+  DesktopUpdateState,
+} from "@t3tools/contracts";
 import { autoUpdater } from "electron-updater";
 
 import type { ContextMenuItem } from "@t3tools/contracts";
-import { NetService } from "@t3tools/shared/Net";
 import { RotatingFileSink } from "@t3tools/shared/logging";
 import { showDesktopConfirmDialog } from "./confirmDialog";
+import { DESKTOP_WS_URL_ARG_PREFIX } from "./desktopWsUrlArg";
 import { fixPath } from "./fixPath";
-import {
-  getAutoUpdateDisabledReason,
-  shouldBroadcastDownloadProgress,
-} from "./updateState";
+import { parseDesktopServerBootstrapLine } from "./serverBootstrap";
+import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
 import {
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
@@ -37,6 +49,7 @@ fixPath();
 
 const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 const CONFIRM_CHANNEL = "desktop:confirm";
+const SET_THEME_CHANNEL = "desktop:set-theme";
 const CONTEXT_MENU_CHANNEL = "desktop:context-menu";
 const OPEN_EXTERNAL_CHANNEL = "desktop:open-external";
 const MENU_ACTION_CHANNEL = "desktop:menu-action";
@@ -44,8 +57,6 @@ const UPDATE_STATE_CHANNEL = "desktop:update-state";
 const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
 const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
-const STATE_DIR =
-  process.env.T3CODE_STATE_DIR?.trim() || Path.join(OS.homedir(), ".t3", "userdata");
 const DESKTOP_SCHEME = "t3";
 const ROOT_DIR = Path.resolve(__dirname, "../../..");
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -55,7 +66,6 @@ const USER_DATA_DIR_NAME = isDevelopment ? "t3code-dev" : "t3code";
 const LEGACY_USER_DATA_DIR_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
-const LOG_DIR = Path.join(STATE_DIR, "logs");
 const LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_FILE_MAX_FILES = 10;
 const APP_RUN_ID = Crypto.randomBytes(6).toString("hex");
@@ -63,21 +73,19 @@ const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
+const BACKEND_BOOTSTRAP_TIMEOUT_MS = 15_000;
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess.ChildProcess | null = null;
-let backendPort = 0;
-let backendAuthToken = "";
-let backendWsUrl = "";
+let backendBootstrap: DesktopServerBootstrap | null = null;
 let restartAttempt = 0;
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
 let isQuitting = false;
 let desktopProtocolRegistered = false;
 let aboutCommitHashCache: string | null | undefined;
 let desktopLogSink: RotatingFileSink | null = null;
-let backendLogSink: RotatingFileSink | null = null;
 let restoreStdIoCapture: (() => void) | null = null;
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
@@ -97,21 +105,9 @@ function logScope(scope: string): string {
   return `${scope} run=${APP_RUN_ID}`;
 }
 
-function sanitizeLogValue(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
 function writeDesktopLogHeader(message: string): void {
   if (!desktopLogSink) return;
   desktopLogSink.write(`[${logTimestamp()}] [${logScope("desktop")}] ${message}\n`);
-}
-
-function writeBackendSessionBoundary(phase: "START" | "END", details: string): void {
-  if (!backendLogSink) return;
-  const normalizedDetails = sanitizeLogValue(details);
-  backendLogSink.write(
-    `[${logTimestamp()}] ---- APP SESSION ${phase} run=${APP_RUN_ID} ${normalizedDetails} ----\n`,
-  );
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -138,6 +134,14 @@ function getSafeExternalUrl(rawUrl: unknown): string | null {
   }
 
   return parsedUrl.toString();
+}
+
+function getSafeTheme(rawTheme: unknown): DesktopTheme | null {
+  if (rawTheme === "light" || rawTheme === "dark" || rawTheme === "system") {
+    return rawTheme;
+  }
+
+  return null;
 }
 
 function writeDesktopStreamChunk(
@@ -195,36 +199,25 @@ function installStdIoCapture(): void {
   };
 }
 
+function resolveDesktopLogDir(): string {
+  return Path.join(resolveUserDataPath(), "logs");
+}
+
 function initializePackagedLogging(): void {
   if (!app.isPackaged) return;
   try {
+    const logDir = resolveDesktopLogDir();
     desktopLogSink = new RotatingFileSink({
-      filePath: Path.join(LOG_DIR, "desktop-main.log"),
-      maxBytes: LOG_FILE_MAX_BYTES,
-      maxFiles: LOG_FILE_MAX_FILES,
-    });
-    backendLogSink = new RotatingFileSink({
-      filePath: Path.join(LOG_DIR, "server-child.log"),
+      filePath: Path.join(logDir, "desktop-main.log"),
       maxBytes: LOG_FILE_MAX_BYTES,
       maxFiles: LOG_FILE_MAX_FILES,
     });
     installStdIoCapture();
-    writeDesktopLogHeader(`runtime log capture enabled logDir=${LOG_DIR}`);
+    writeDesktopLogHeader(`runtime log capture enabled logDir=${logDir}`);
   } catch (error) {
     // Logging setup should never block app startup.
     console.error("[desktop] failed to initialize packaged logging", error);
   }
-}
-
-function captureBackendOutput(child: ChildProcess.ChildProcess): void {
-  if (!app.isPackaged || backendLogSink === null) return;
-  const writeChunk = (chunk: unknown): void => {
-    if (!backendLogSink) return;
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
-    backendLogSink.write(buffer);
-  };
-  child.stdout?.on("data", writeChunk);
-  child.stderr?.on("data", writeChunk);
 }
 
 initializePackagedLogging();
@@ -515,7 +508,28 @@ function handleCheckForUpdatesMenuClick(): void {
   if (!BrowserWindow.getAllWindows().length) {
     mainWindow = createWindow();
   }
-  void checkForUpdates("menu");
+  void checkForUpdatesFromMenu();
+}
+
+async function checkForUpdatesFromMenu(): Promise<void> {
+  await checkForUpdates("menu");
+
+  if (updateState.status === "up-to-date") {
+    void dialog.showMessageBox({
+      type: "info",
+      title: "You're up to date!",
+      message: `T3 Code ${updateState.currentVersion} is currently the newest version available.`,
+      buttons: ["OK"],
+    });
+  } else if (updateState.status === "error") {
+    void dialog.showMessageBox({
+      type: "warning",
+      title: "Update check failed",
+      message: "Could not check for updates.",
+      detail: updateState.message ?? "An unknown error occurred. Please try again later.",
+      buttons: ["OK"],
+    });
+  }
 }
 
 function configureApplicationMenu(): void {
@@ -566,7 +580,21 @@ function configureApplicationMenu(): void {
       ],
     },
     { role: "editMenu" },
-    { role: "viewMenu" },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn", accelerator: "CmdOrCtrl+=" },
+        { role: "zoomIn", accelerator: "CmdOrCtrl+Plus", visible: false },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
     { role: "windowMenu" },
     {
       role: "help",
@@ -585,6 +613,7 @@ function configureApplicationMenu(): void {
 function resolveResourcePath(fileName: string): string | null {
   const candidates = [
     Path.join(__dirname, "../resources", fileName),
+    Path.join(__dirname, "../prod-resources", fileName),
     Path.join(process.resourcesPath, "resources", fileName),
     Path.join(process.resourcesPath, fileName),
   ];
@@ -856,15 +885,36 @@ function configureAutoUpdater(): void {
   }, AUTO_UPDATE_POLL_INTERVAL_MS);
   updatePollTimer.unref();
 }
-function backendEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    T3CODE_MODE: "desktop",
-    T3CODE_NO_BROWSER: "1",
-    T3CODE_PORT: String(backendPort),
-    T3CODE_STATE_DIR: STATE_DIR,
-    T3CODE_AUTH_TOKEN: backendAuthToken,
-  };
+function getBackendArgs(backendEntry: string): string[] {
+  const args = [backendEntry, "--mode", "desktop", "--no-browser"];
+  if (backendBootstrap) {
+    args.push(
+      "--host",
+      backendBootstrap.connection.bindHost,
+      "--port",
+      String(backendBootstrap.connection.port),
+      "--auth-token",
+      backendBootstrap.connection.authToken,
+    );
+  }
+  return args;
+}
+
+function forwardBackendOutput(
+  streamName: "stdout" | "stderr",
+  chunk: string | Uint8Array,
+  encoding?: BufferEncoding,
+): void {
+  if (app.isPackaged) {
+    return;
+  }
+
+  const target = streamName === "stdout" ? process.stdout : process.stderr;
+  if (typeof chunk === "string") {
+    target.write(chunk, encoding);
+    return;
+  }
+  target.write(Buffer.from(chunk));
 }
 
 function scheduleBackendRestart(reason: string): void {
@@ -876,65 +926,132 @@ function scheduleBackendRestart(reason: string): void {
 
   restartTimer = setTimeout(() => {
     restartTimer = null;
-    startBackend();
+    void startBackend().catch((error) => {
+      const message = formatErrorMessage(error);
+      writeDesktopLogHeader(`backend restart bootstrap failed message=${message}`);
+      console.error("[desktop] backend restart failed", error);
+    });
   }, delayMs);
 }
 
-function startBackend(): void {
-  if (isQuitting || backendProcess) return;
+async function startBackend(): Promise<DesktopServerBootstrap> {
+  if (isQuitting) {
+    throw new Error("Cannot start the backend while the desktop shell is quitting.");
+  }
+  if (backendProcess) {
+    if (backendBootstrap) {
+      return backendBootstrap;
+    }
+    throw new Error("Backend process is already running without a resolved bootstrap contract.");
+  }
 
   const backendEntry = resolveBackendEntry();
   if (!FS.existsSync(backendEntry)) {
-    scheduleBackendRestart(`missing server entry at ${backendEntry}`);
-    return;
+    throw new Error(`Missing server entry at ${backendEntry}`);
   }
 
-  const captureBackendLogs = app.isPackaged && backendLogSink !== null;
-  const child = ChildProcess.spawn(process.execPath, [backendEntry], {
+  const child = ChildProcess.spawn(process.execPath, getBackendArgs(backendEntry), {
     cwd: resolveBackendCwd(),
     // In Electron main, process.execPath points to the Electron binary.
     // Run the child in Node mode so this backend process does not become a GUI app instance.
     env: {
-      ...backendEnv(),
+      ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
     },
-    stdio: captureBackendLogs ? ["ignore", "pipe", "pipe"] : "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   backendProcess = child;
-  let backendSessionClosed = false;
-  const closeBackendSession = (details: string) => {
-    if (backendSessionClosed) return;
-    backendSessionClosed = true;
-    writeBackendSessionBoundary("END", details);
-  };
-  writeBackendSessionBoundary(
-    "START",
-    `pid=${child.pid ?? "unknown"} port=${backendPort} cwd=${resolveBackendCwd()}`,
-  );
-  captureBackendOutput(child);
+  writeDesktopLogHeader(`backend spawn requested pid=${child.pid ?? "unknown"} cwd=${resolveBackendCwd()}`);
 
   child.once("spawn", () => {
     restartAttempt = 0;
   });
 
-  child.on("error", (error) => {
-    if (backendProcess === child) {
-      backendProcess = null;
-    }
-    closeBackendSession(`pid=${child.pid ?? "unknown"} error=${error.message}`);
-    scheduleBackendRestart(error.message);
-  });
+  return await new Promise<DesktopServerBootstrap>((resolve, reject) => {
+    let settled = false;
+    let stdoutRemainder = "";
+    const bootstrapTimeout = setTimeout(() => {
+      settle(
+        new Error(
+          `Backend did not emit the desktop bootstrap contract within ${BACKEND_BOOTSTRAP_TIMEOUT_MS}ms.`,
+        ),
+      );
+    }, BACKEND_BOOTSTRAP_TIMEOUT_MS);
+    bootstrapTimeout.unref();
 
-  child.on("exit", (code, signal) => {
-    if (backendProcess === child) {
-      backendProcess = null;
-    }
-    closeBackendSession(
-      `pid=${child.pid ?? "unknown"} code=${code ?? "null"} signal=${signal ?? "null"}`,
-    );
-    if (isQuitting) return;
-    const reason = `code=${code ?? "null"} signal=${signal ?? "null"}`;
-    scheduleBackendRestart(reason);
+    const settle = (error: Error | null, bootstrap?: DesktopServerBootstrap) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(bootstrapTimeout);
+      if (error) {
+        reject(error);
+        return;
+      }
+      if (!bootstrap) {
+        reject(new Error("Backend bootstrap resolved without a bootstrap payload."));
+        return;
+      }
+      resolve(bootstrap);
+    };
+
+    child.stdout?.on("data", (chunk: string | Uint8Array) => {
+      forwardBackendOutput("stdout", chunk);
+      stdoutRemainder += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+      const lines = stdoutRemainder.split(/\r?\n/);
+      stdoutRemainder = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.length === 0) {
+          continue;
+        }
+        let bootstrap: DesktopServerBootstrap | null;
+        try {
+          bootstrap = parseDesktopServerBootstrapLine(line);
+        } catch (error) {
+          settle(
+            error instanceof Error
+              ? error
+              : new Error(`Failed to parse backend bootstrap: ${String(error)}`),
+          );
+          return;
+        }
+        if (!bootstrap) {
+          continue;
+        }
+        backendBootstrap = bootstrap;
+        writeDesktopLogHeader(
+          `backend bootstrap resolved wsUrl=${bootstrap.connection.wsUrl} stateDir=${bootstrap.stateDir}`,
+        );
+        settle(null, bootstrap);
+      }
+    });
+
+    child.stderr?.on("data", (chunk: string | Uint8Array) => {
+      forwardBackendOutput("stderr", chunk);
+    });
+
+    child.on("error", (error) => {
+      if (backendProcess === child) {
+        backendProcess = null;
+      }
+      writeDesktopLogHeader(`backend process error message=${error.message}`);
+      settle(error);
+      if (!isQuitting) {
+        scheduleBackendRestart(error.message);
+      }
+    });
+
+    child.on("exit", (code, signal) => {
+      if (backendProcess === child) {
+        backendProcess = null;
+      }
+      const reason = `code=${code ?? "null"} signal=${signal ?? "null"}`;
+      writeDesktopLogHeader(`backend process exit ${reason}`);
+      if (!settled) {
+        settle(new Error(`Backend exited before bootstrap was available (${reason}).`));
+      }
+      if (isQuitting) return;
+      scheduleBackendRestart(reason);
+    });
   });
 }
 
@@ -1032,6 +1149,16 @@ function registerIpcHandlers(): void {
 
     const owner = BrowserWindow.getFocusedWindow() ?? mainWindow;
     return showDesktopConfirmDialog(message, owner);
+  });
+
+  ipcMain.removeHandler(SET_THEME_CHANNEL);
+  ipcMain.handle(SET_THEME_CHANNEL, async (_event, rawTheme: unknown) => {
+    const theme = getSafeTheme(rawTheme);
+    if (!theme) {
+      return;
+    }
+
+    nativeTheme.themeSource = theme;
   });
 
   ipcMain.removeHandler(CONTEXT_MENU_CHANNEL);
@@ -1149,6 +1276,7 @@ function getIconOption(): { icon: string } | Record<string, never> {
 }
 
 function createWindow(): BrowserWindow {
+  const wsUrl = backendBootstrap?.connection.wsUrl ?? "";
   const window = new BrowserWindow({
     width: 1100,
     height: 780,
@@ -1161,6 +1289,7 @@ function createWindow(): BrowserWindow {
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
+      additionalArguments: wsUrl.length > 0 ? [`${DESKTOP_WS_URL_ARG_PREFIX}${wsUrl}`] : [],
       preload: Path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
@@ -1241,21 +1370,12 @@ configureAppIdentity();
 
 async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap start");
-  backendPort = await Effect.service(NetService).pipe(
-    Effect.flatMap((net) => net.reserveLoopbackPort()),
-    Effect.provide(NetService.layer),
-    Effect.runPromise,
-  );
-  writeDesktopLogHeader(`reserved backend port via NetService port=${backendPort}`);
-  backendAuthToken = Crypto.randomBytes(24).toString("hex");
-  backendWsUrl = `ws://127.0.0.1:${backendPort}/?token=${encodeURIComponent(backendAuthToken)}`;
-  process.env.T3CODE_DESKTOP_WS_URL = backendWsUrl;
-  writeDesktopLogHeader(`bootstrap resolved websocket url=${backendWsUrl}`);
-
   registerIpcHandlers();
   writeDesktopLogHeader("bootstrap ipc handlers registered");
-  startBackend();
-  writeDesktopLogHeader("bootstrap backend start requested");
+  backendBootstrap = await startBackend();
+  writeDesktopLogHeader(
+    `bootstrap backend ready wsUrl=${backendBootstrap.connection.wsUrl} stateDir=${backendBootstrap.stateDir}`,
+  );
   mainWindow = createWindow();
   writeDesktopLogHeader("bootstrap main window created");
 }

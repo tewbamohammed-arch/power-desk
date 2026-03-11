@@ -5,7 +5,7 @@
 - `bun run typecheck` must pass before considering a task complete.
 - `bun run build` must pass before considering a task complete.
 - `bun run test` must pass before considering a task complete.
-- `bun run lint` exists at the repo root. Do not claim lint verification unless you actually ran it.
+- `bun run lint` exists at the repo root.
 
 ## Project Snapshot
 

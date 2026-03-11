@@ -1,4 +1,5 @@
 import * as Http from "node:http";
+import * as Path from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import type { OrchestrationReadModel } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ const serverStart = Effect.acquireRelease(
   () => Effect.sync(() => stop()),
 );
 const findAvailablePort = vi.fn((preferred: number) => Effect.succeed(preferred));
+const resolveExpectedStateDir = (stateDir: string) => Path.resolve(stateDir);
 
 // Shared service layer used by this CLI test suite.
 const testLayer = Layer.mergeAll(
@@ -106,7 +108,7 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.mode, "desktop");
       assert.equal(resolvedConfig?.port, 4010);
       assert.equal(resolvedConfig?.host, "0.0.0.0");
-      assert.equal(resolvedConfig?.stateDir, "/tmp/t3-cli-state");
+      assert.equal(resolvedConfig?.stateDir, resolveExpectedStateDir("/tmp/t3-cli-state"));
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://127.0.0.1:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "auth-secret");
@@ -141,7 +143,7 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.mode, "desktop");
       assert.equal(resolvedConfig?.port, 4999);
       assert.equal(resolvedConfig?.host, "100.88.10.4");
-      assert.equal(resolvedConfig?.stateDir, "/tmp/t3-env-state");
+      assert.equal(resolvedConfig?.stateDir, resolveExpectedStateDir("/tmp/t3-env-state"));
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://localhost:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "env-token");
@@ -190,18 +192,21 @@ it.layer(testLayer)("server CLI command", (it) => {
     }),
   );
 
-  it.effect("uses fixed localhost defaults in desktop mode", () =>
+  it.effect("uses dynamic loopback defaults and generates auth in desktop mode", () =>
     Effect.gen(function* () {
+      findAvailablePort.mockImplementation((_preferred: number) => Effect.succeed(4888));
       yield* runCli([], {
         T3CODE_MODE: "desktop",
         T3CODE_NO_BROWSER: "true",
       });
 
-      assert.equal(findAvailablePort.mock.calls.length, 0);
+      assert.deepStrictEqual(findAvailablePort.mock.calls, [[3773]]);
       assert.equal(start.mock.calls.length, 1);
-      assert.equal(resolvedConfig?.port, 3773);
+      assert.equal(resolvedConfig?.port, 4888);
       assert.equal(resolvedConfig?.host, "127.0.0.1");
       assert.equal(resolvedConfig?.mode, "desktop");
+      assert.equal(typeof resolvedConfig?.authToken, "string");
+      assert.equal(resolvedConfig?.authToken?.length, 48);
     }),
   );
 

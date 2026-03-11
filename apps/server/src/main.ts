@@ -6,6 +6,7 @@
  *
  * @module CliConfig
  */
+import * as Crypto from "node:crypto";
 import { Config, Data, Effect, FileSystem, Layer, Option, Path, Schema, ServiceMap } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { NetService } from "@t3tools/shared/Net";
@@ -26,6 +27,10 @@ import { Server } from "./wsServer";
 import { ServerLoggerLive } from "./serverLogger";
 import { AnalyticsServiceLayerLive } from "./telemetry/Layers/AnalyticsService";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
+import {
+  createDesktopServerBootstrap,
+  formatDesktopServerBootstrapStdout,
+} from "./desktopServerBootstrap";
 
 export class StartupError extends Data.TaggedError("StartupError")<{
   readonly message: string;
@@ -146,9 +151,6 @@ const ServerConfigLive = (input: CliInput) =>
           if (env.port) {
             return Effect.succeed(env.port);
           }
-          if (mode === "desktop") {
-            return Effect.succeed(DEFAULT_PORT);
-          }
           return findAvailablePort(DEFAULT_PORT);
         },
       });
@@ -157,7 +159,10 @@ const ServerConfigLive = (input: CliInput) =>
       );
       const devUrl = Option.getOrElse(input.devUrl, () => env.devUrl);
       const noBrowser = resolveBooleanFlag(input.noBrowser, env.noBrowser ?? mode === "desktop");
-      const authToken = Option.getOrUndefined(input.authToken) ?? env.authToken;
+      const authToken =
+        Option.getOrUndefined(input.authToken) ??
+        env.authToken ??
+        (mode === "desktop" ? Crypto.randomBytes(24).toString("hex") : undefined);
       const autoBootstrapProjectFromCwd = resolveBooleanFlag(
         input.autoBootstrapProjectFromCwd,
         env.autoBootstrapProjectFromCwd ?? mode === "web",
@@ -255,6 +260,17 @@ const makeServerProgram = (input: CliInput) =>
 
     yield* start;
     yield* Effect.forkChild(recordStartupHeartbeat);
+    if (config.mode === "desktop" && config.authToken) {
+      const desktopBootstrap = createDesktopServerBootstrap({
+        host: config.host,
+        port: config.port,
+        authToken: config.authToken,
+        stateDir: config.stateDir,
+      });
+      yield* Effect.sync(() => {
+        process.stdout.write(`${formatDesktopServerBootstrapStdout(desktopBootstrap)}\n`);
+      });
+    }
 
     const localUrl = `http://localhost:${config.port}`;
     const bindUrl =
