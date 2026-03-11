@@ -761,6 +761,55 @@ describe("WebSocket Server", () => {
     expectAvailableEditors((response.result as { availableEditors: unknown }).availableEditors);
   });
 
+  it("responds to server.getSessionState", async () => {
+    server = await createTestServer({ cwd: "/my/workspace" });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.serverGetSessionState);
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual({
+      status: "starting",
+      stage: "tenant-selection",
+      workspace: {
+        id: "/my/workspace",
+        label: "workspace",
+        rootPath: "/my/workspace",
+        lastOpenedAt: expect.any(String),
+      },
+      tenant: null,
+      auth: [
+        {
+          domain: "openai",
+          status: "authenticated",
+          lastValidatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          domain: "microsoft",
+          status: "unknown",
+        },
+        {
+          domain: "browser-session",
+          status: "unknown",
+        },
+      ],
+      healthChecks: [
+        {
+          id: "provider:codex",
+          label: "Codex CLI",
+          status: "ready",
+          checkedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      activeApprovalCount: 0,
+      evidenceSummaryRefs: [],
+      updatedAt: expect.any(String),
+    });
+  });
+
   it("bootstraps default keybindings file when missing", async () => {
     const stateDir = makeTempDir("t3code-state-bootstrap-keybindings-");
     const keybindingsPath = path.join(stateDir, "keybindings.json");

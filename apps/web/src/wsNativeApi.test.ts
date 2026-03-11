@@ -349,6 +349,16 @@ describe("wsNativeApi", () => {
     });
   });
 
+  it("forwards server session state requests to the websocket server method", async () => {
+    requestMock.mockResolvedValue({ status: "starting" });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.server.getSessionState();
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.serverGetSessionState);
+  });
+
   it("forwards full-thread diff requests to the orchestration websocket method", async () => {
     requestMock.mockResolvedValue({ diff: "patch" });
     const { createWsNativeApi } = await import("./wsNativeApi");

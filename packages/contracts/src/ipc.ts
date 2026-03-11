@@ -31,6 +31,7 @@ import type {
   TerminalWriteInput,
 } from "./terminal";
 import type { ServerUpsertKeybindingInput, ServerUpsertKeybindingResult } from "./server";
+import type { AppSessionState } from "./foundation";
 import type {
   ClientOrchestrationCommand,
   OrchestrationGetFullThreadDiffInput,
@@ -147,6 +148,7 @@ export interface NativeApi {
   };
   server: {
     getConfig: () => Promise<ServerConfig>;
+    getSessionState: () => Promise<AppSessionState>;
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
   };
   orchestration: {

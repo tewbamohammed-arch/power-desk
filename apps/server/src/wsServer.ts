@@ -73,6 +73,10 @@ import {
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { expandHomePath } from "./os-jank.ts";
+import { makeServerPushBus } from "./wsServer/pushBus.ts";
+import { makeServerReadiness } from "./wsServer/readiness.ts";
+import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
+import { createAppSessionState } from "./appSessionState";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -886,6 +890,12 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           providers: providerStatuses,
           availableEditors,
         };
+
+      case WS_METHODS.serverGetSessionState:
+        return createAppSessionState({
+          cwd,
+          providerStatuses,
+        });
 
       case WS_METHODS.serverUpsertKeybinding: {
         const body = stripRequestTag(request.body);
