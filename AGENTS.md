@@ -7,6 +7,11 @@
 - `bun run test` must pass before considering a task complete.
 - `bun run lint` exists at the repo root.
 
+### Exception to [Task Completion Requirements](#task-completion-requirements)
+
+> - Documentation changes involving only markdown files.
+
+
 ## Project Snapshot
 
 Power Desk is a Codex-first, desktop-hosted workbench for Power Platform delivery tasks.
