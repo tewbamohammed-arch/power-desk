@@ -101,6 +101,8 @@ function SettingsRouteView() {
   const diagnostics = serverConfigQuery.data?.diagnostics ?? null;
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
   const runtime = serverConfigQuery.data?.runtime ?? null;
+  const diagnosticsPending = serverConfigQuery.isPending;
+  const diagnosticsAvailable = runtime !== null && diagnostics !== null;
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -538,19 +540,25 @@ function SettingsRouteView() {
                   <div className="rounded-lg border border-border bg-background px-3 py-2">
                     <p className="text-xs font-medium text-foreground">Run ID</p>
                     <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
-                      {runtime?.runId ?? "Resolving run id..."}
+                      {runtime?.runId ??
+                        (diagnosticsPending
+                          ? "Resolving run id..."
+                          : "Unavailable until backend restart")}
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-background px-3 py-2">
                     <p className="text-xs font-medium text-foreground">Mode</p>
                     <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                      {runtime?.mode ?? "resolving"}
+                      {runtime?.mode ?? (diagnosticsPending ? "resolving" : "unavailable")}
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-background px-3 py-2">
                     <p className="text-xs font-medium text-foreground">Started</p>
                     <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
-                      {runtime?.startedAt ?? "Resolving start time..."}
+                      {runtime?.startedAt ??
+                        (diagnosticsPending
+                          ? "Resolving start time..."
+                          : "Unavailable until backend restart")}
                     </p>
                   </div>
                 </div>
@@ -580,7 +588,10 @@ function SettingsRouteView() {
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-foreground">{entry.label}</p>
                       <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
-                        {entry.path ?? "Resolving path..."}
+                        {entry.path ??
+                          (diagnosticsPending
+                            ? "Resolving path..."
+                            : "Unavailable until backend restart")}
                       </p>
                     </div>
                     <Button
@@ -592,14 +603,19 @@ function SettingsRouteView() {
                         openDiagnosticsPath(entry.path);
                       }}
                     >
-                      {openingDiagnosticsPath === entry.path ? "Opening..." : "Open"}
+                      {entry.path && openingDiagnosticsPath === entry.path
+                        ? "Opening..."
+                        : entry.path
+                          ? "Open"
+                          : "Unavailable"}
                     </Button>
                   </div>
                 ))}
 
                 <p className="text-xs text-muted-foreground">
-                  Opens in your preferred editor selection so you can inspect logs without leaving
-                  the workbench.
+                  {diagnosticsAvailable
+                    ? "Opens in your preferred editor selection so you can inspect logs without leaving the workbench."
+                    : "If these fields stay unavailable after the page loads, restart the desktop app so the web shell reconnects to the newer backend contract."}
                 </p>
                 {openDiagnosticsError ? (
                   <p className="text-xs text-destructive">{openDiagnosticsError}</p>
