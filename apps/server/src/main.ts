@@ -32,6 +32,7 @@ import {
   createDesktopServerBootstrap,
   formatDesktopServerBootstrapStdout,
 } from "./desktopServerBootstrap";
+import { StartupStateStoreLive } from "./startupState";
 
 export class StartupError extends Data.TaggedError("StartupError")<{
   readonly message: string;
@@ -204,15 +205,39 @@ const ServerConfigLive = (input: CliInput) =>
   );
 
 const LayerLive = (input: CliInput) =>
-  Layer.empty.pipe(
-    Layer.provideMerge(makeServerRuntimeServicesLayer()),
-    Layer.provideMerge(makeServerProviderLayer()),
-    Layer.provideMerge(ProviderHealthLive),
-    Layer.provideMerge(SqlitePersistence.layerConfig),
-    Layer.provideMerge(ServerLoggerLive),
-    Layer.provideMerge(AnalyticsServiceLayerLive),
-    Layer.provideMerge(ServerConfigLive(input)),
-  );
+  (() => {
+    const serverConfigLayer = ServerConfigLive(input);
+    const persistenceLayer = SqlitePersistence.layerConfig.pipe(
+      Layer.provideMerge(serverConfigLayer),
+    );
+    const analyticsLayer = AnalyticsServiceLayerLive.pipe(
+      Layer.provideMerge(serverConfigLayer),
+    );
+    const startupStateLayer = StartupStateStoreLive.pipe(
+      Layer.provideMerge(serverConfigLayer),
+    );
+    const serverLoggerLayer = ServerLoggerLive.pipe(Layer.provideMerge(serverConfigLayer));
+    const runtimeServicesLayer = makeServerRuntimeServicesLayer().pipe(
+      Layer.provideMerge(serverConfigLayer),
+      Layer.provideMerge(persistenceLayer),
+    );
+    const providerLayer = makeServerProviderLayer().pipe(
+      Layer.provideMerge(serverConfigLayer),
+      Layer.provideMerge(persistenceLayer),
+      Layer.provideMerge(analyticsLayer),
+    );
+
+    return Layer.empty.pipe(
+      Layer.provideMerge(serverConfigLayer),
+      Layer.provideMerge(persistenceLayer),
+      Layer.provideMerge(analyticsLayer),
+      Layer.provideMerge(startupStateLayer),
+      Layer.provideMerge(serverLoggerLayer),
+      Layer.provideMerge(runtimeServicesLayer),
+      Layer.provideMerge(providerLayer),
+      Layer.provideMerge(ProviderHealthLive),
+    );
+  })();
 
 const isWildcardHost = (host: string | undefined): boolean =>
   host === "0.0.0.0" || host === "::" || host === "[::]";

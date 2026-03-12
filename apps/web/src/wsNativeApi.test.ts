@@ -393,6 +393,38 @@ describe("wsNativeApi", () => {
     expect(requestMock).toHaveBeenCalledWith(WS_METHODS.serverGetSessionState);
   });
 
+  it("forwards workspace selection updates to the websocket server method", async () => {
+    requestMock.mockResolvedValue({ status: "starting" });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.server.selectWorkspace({
+      projectId: ProjectId.makeUnsafe("project-1"),
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.serverSelectWorkspace, {
+      projectId: "project-1",
+    });
+  });
+
+  it("forwards tenant profile updates to the websocket server method", async () => {
+    requestMock.mockResolvedValue({ status: "starting" });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.server.setTenantProfile({
+      label: "Contoso Dev",
+      tenantId: "11111111-1111-1111-1111-111111111111",
+      environmentUrl: "https://contoso.crm.dynamics.com",
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.serverSetTenantProfile, {
+      label: "Contoso Dev",
+      tenantId: "11111111-1111-1111-1111-111111111111",
+      environmentUrl: "https://contoso.crm.dynamics.com",
+    });
+  });
+
   it("forwards full-thread diff requests to the orchestration websocket method", async () => {
     requestMock.mockResolvedValue({ diff: "patch" });
     const { createWsNativeApi } = await import("./wsNativeApi");

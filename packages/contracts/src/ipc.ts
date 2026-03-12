@@ -31,6 +31,7 @@ import type {
   TerminalWriteInput,
 } from "./terminal";
 import type { ServerUpsertKeybindingInput, ServerUpsertKeybindingResult } from "./server";
+import type { ServerSelectWorkspaceInput, ServerSetTenantProfileInput } from "./server";
 import type { AppSessionState } from "./foundation";
 import type {
   ClientOrchestrationCommand,
@@ -149,6 +150,9 @@ export interface NativeApi {
   server: {
     getConfig: () => Promise<ServerConfig>;
     getSessionState: () => Promise<AppSessionState>;
+    selectWorkspace: (input: ServerSelectWorkspaceInput) => Promise<AppSessionState>;
+    setTenantProfile: (input: ServerSetTenantProfileInput) => Promise<AppSessionState>;
+    clearTenantProfile: () => Promise<AppSessionState>;
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
   };
   orchestration: {

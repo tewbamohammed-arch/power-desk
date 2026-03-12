@@ -12,9 +12,54 @@ const READY_PROVIDER: ServerProviderStatus = {
 };
 
 describe("createAppSessionState", () => {
+  it("marks the session as workspace-selection when no workspace is selected", () => {
+    const sessionState = createAppSessionState({
+      providerStatuses: [READY_PROVIDER],
+      now: "2026-03-11T12:05:00.000Z",
+    });
+
+    expect(sessionState).toEqual({
+      status: "starting",
+      stage: "workspace-selection",
+      workspace: null,
+      tenant: null,
+      auth: [
+        {
+          domain: "openai",
+          status: "authenticated",
+          lastValidatedAt: "2026-03-11T12:00:00.000Z",
+        },
+        {
+          domain: "microsoft",
+          status: "unknown",
+        },
+        {
+          domain: "browser-session",
+          status: "unknown",
+        },
+      ],
+      healthChecks: [
+        {
+          id: "provider:codex",
+          label: "Codex CLI",
+          status: "ready",
+          checkedAt: "2026-03-11T12:00:00.000Z",
+        },
+      ],
+      activeApprovalCount: 0,
+      evidenceSummaryRefs: [],
+      updatedAt: "2026-03-11T12:05:00.000Z",
+    });
+  });
+
   it("marks the session as tenant-selection while workspace is ready but no tenant is chosen", () => {
     const sessionState = createAppSessionState({
-      cwd: "/workspace/power-desk",
+      workspace: {
+        id: "project-1",
+        label: "power-desk",
+        rootPath: "/workspace/power-desk",
+        lastOpenedAt: "2026-03-11T12:05:00.000Z",
+      },
       providerStatuses: [READY_PROVIDER],
       now: "2026-03-11T12:05:00.000Z",
     });
@@ -23,7 +68,7 @@ describe("createAppSessionState", () => {
       status: "starting",
       stage: "tenant-selection",
       workspace: {
-        id: "/workspace/power-desk",
+        id: "project-1",
         label: "power-desk",
         rootPath: "/workspace/power-desk",
         lastOpenedAt: "2026-03-11T12:05:00.000Z",
@@ -60,7 +105,18 @@ describe("createAppSessionState", () => {
 
   it("marks the session as blocked when a tool health check errors", () => {
     const sessionState = createAppSessionState({
-      cwd: "/workspace/power-desk",
+      workspace: {
+        id: "project-1",
+        label: "power-desk",
+        rootPath: "/workspace/power-desk",
+        lastOpenedAt: "2026-03-11T12:05:00.000Z",
+      },
+      tenant: {
+        id: "tenant-1",
+        label: "Contoso Dev",
+        tenantId: "11111111-1111-1111-1111-111111111111",
+        lastValidatedAt: "2026-03-11T12:05:00.000Z",
+      },
       providerStatuses: [
         {
           provider: "codex",

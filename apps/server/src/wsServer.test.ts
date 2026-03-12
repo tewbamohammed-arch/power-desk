@@ -17,6 +17,7 @@ import {
   EventId,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
+  ProjectId,
   ProviderItemId,
   ThreadId,
   TurnId,
@@ -51,6 +52,7 @@ import { GitCore } from "./git/Services/GitCore.ts";
 import { GitCommandError, GitManagerError } from "./git/Errors.ts";
 import { MigrationError } from "@effect/sql-sqlite-bun/SqliteMigrator";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
+import { StartupStateStoreLive } from "./startupState";
 
 interface PendingMessages {
   queue: unknown[];
@@ -295,21 +297,61 @@ async function waitForPush(
   channel: string,
   predicate?: (push: WsPush) => boolean,
   maxMessages = 120,
-): Promise<WsPush> {
-  const take = async (remaining: number): Promise<WsPush> => {
-    if (remaining <= 0) {
-      throw new Error(`Timed out waiting for push on ${channel}`);
+  idleTimeoutMs = 5_000,
+): Promise<WsPushMessage<C>> {
+  const channels = channelsBySocket.get(ws);
+  if (!channels) throw new Error("WebSocket not initialized");
+
+  for (let remaining = maxMessages; remaining > 0; remaining--) {
+    const push = await dequeue(channels.push, idleTimeoutMs);
+    if (push.channel !== channel) continue;
+    const typed = push as WsPushMessage<C>;
+    if (!predicate || predicate(typed)) return typed;
+  }
+  throw new Error(`Timed out waiting for push on ${channel}`);
+}
+
+async function selectWorkspaceWithRetry(
+  ws: WebSocket,
+  projectId: ProjectId,
+  timeoutMs = 3_000,
+): Promise<WebSocketResponse> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const response = await sendRequest(ws, WS_METHODS.serverSelectWorkspace, { projectId });
+    if (!response.error) {
+      return response;
     }
-    const message = (await waitForMessage(ws)) as WsPush;
-    if (message.type !== "push" || message.channel !== channel) {
-      return take(remaining - 1);
+
+    if (!response.error.message.includes("Unknown workspace project")) {
+      return response;
     }
-    if (!predicate || predicate(message)) {
-      return message;
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  return sendRequest(ws, WS_METHODS.serverSelectWorkspace, { projectId });
+}
+
+async function rewriteKeybindingsAndWaitForPush(
+  ws: WebSocket,
+  keybindingsPath: string,
+  contents: string,
+  predicate: (push: WsPushMessage<typeof WS_CHANNELS.serverConfigUpdated>) => boolean,
+  attempts = 3,
+): Promise<WsPushMessage<typeof WS_CHANNELS.serverConfigUpdated>> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    fs.writeFileSync(keybindingsPath, contents, "utf8");
+    try {
+      return await waitForPush(ws, WS_CHANNELS.serverConfigUpdated, predicate, 20, 3_000);
+    } catch (error) {
+      lastError = error;
     }
-    return take(remaining - 1);
-  };
-  return take(maxMessages);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw lastError ?? new Error("Timed out waiting for keybindings push");
 }
 
 async function requestPath(
@@ -435,6 +477,7 @@ describe("WebSocket Server", () => {
     const scope = await Effect.runPromise(Scope.make("sequential"));
     const persistenceLayer = options.persistenceLayer ?? SqlitePersistenceMemory;
     const providerLayer = options.providerLayer ?? makeServerProviderLayer();
+    const analyticsLayer = AnalyticsService.layerTest;
     const providerHealthLayer = Layer.succeed(
       ProviderHealth,
       options.providerHealth ?? defaultProviderHealthService,
@@ -457,7 +500,11 @@ describe("WebSocket Server", () => {
       autoBootstrapProjectFromCwd: options.autoBootstrapProjectFromCwd ?? false,
       logWebSocketEvents: options.logWebSocketEvents ?? Boolean(options.devUrl),
     } satisfies ServerConfigShape);
-    const infrastructureLayer = providerLayer.pipe(Layer.provideMerge(persistenceLayer));
+    const infrastructureLayer = providerLayer.pipe(
+      Layer.provideMerge(persistenceLayer),
+      Layer.provideMerge(serverConfigLayer),
+      Layer.provideMerge(analyticsLayer),
+    );
     const runtimeOverrides = Layer.mergeAll(
       options.gitManager ? Layer.succeed(GitManager, options.gitManager) : Layer.empty,
       options.gitCore
@@ -475,13 +522,18 @@ describe("WebSocket Server", () => {
       ),
       runtimeOverrides,
     );
+    const startupStateLayer = StartupStateStoreLive.pipe(
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(serverConfigLayer),
+    );
     const dependenciesLayer = Layer.empty.pipe(
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(serverConfigLayer),
+      Layer.provideMerge(analyticsLayer),
       Layer.provideMerge(runtimeLayer),
       Layer.provideMerge(providerHealthLayer),
       Layer.provideMerge(openLayer),
-      Layer.provideMerge(serverConfigLayer),
-      Layer.provideMerge(AnalyticsService.layerTest),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(startupStateLayer),
     );
     const runtimeServices = await Effect.runPromise(
       Layer.build(dependenciesLayer).pipe(Scope.provide(scope)),
@@ -806,13 +858,8 @@ describe("WebSocket Server", () => {
     expect(response.error).toBeUndefined();
     expect(response.result).toEqual({
       status: "starting",
-      stage: "tenant-selection",
-      workspace: {
-        id: "/my/workspace",
-        label: "workspace",
-        rootPath: "/my/workspace",
-        lastOpenedAt: expect.any(String),
-      },
+      stage: "workspace-selection",
+      workspace: null,
       tenant: null,
       auth: [
         {
@@ -854,14 +901,94 @@ describe("WebSocket Server", () => {
     const push = await waitForPush(ws, WS_CHANNELS.serverSessionStateUpdated);
     expect(push.data).toMatchObject({
       status: "starting",
-      stage: "tenant-selection",
-      workspace: {
-        id: "/my/workspace",
-        label: "workspace",
-        rootPath: "/my/workspace",
-      },
+      stage: "workspace-selection",
+      workspace: null,
       activeApprovalCount: 0,
       evidenceSummaryRefs: [],
+    });
+  });
+
+  it("updates session state when selecting a workspace", async () => {
+    const workspaceRoot = makeTempDir("t3code-ws-startup-project-");
+    server = await createTestServer({ cwd: workspaceRoot });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const projectId = ProjectId.makeUnsafe("project-1");
+    await sendRequest(ws, ORCHESTRATION_WS_METHODS.dispatchCommand, {
+      type: "project.create",
+      commandId: "cmd-project-create-1",
+      projectId,
+      title: "Power Desk",
+      workspaceRoot,
+      defaultModel: "gpt-5-codex",
+      createdAt: "2026-03-12T09:00:00.000Z",
+    });
+
+    const response = await selectWorkspaceWithRetry(ws, projectId);
+    expect(response.error).toBeUndefined();
+    expect(response.result).toMatchObject({
+      status: "starting",
+      stage: "tenant-selection",
+      workspace: {
+        id: "project-1",
+        label: "Power Desk",
+        rootPath: workspaceRoot,
+      },
+      tenant: null,
+    });
+  });
+
+  it("saves and clears tenant context through the server boundary", async () => {
+    const workspaceRoot = makeTempDir("t3code-ws-tenant-project-");
+    server = await createTestServer({ cwd: workspaceRoot });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const projectId = ProjectId.makeUnsafe("project-2");
+    await sendRequest(ws, ORCHESTRATION_WS_METHODS.dispatchCommand, {
+      type: "project.create",
+      commandId: "cmd-project-create-2",
+      projectId,
+      title: "Power Desk",
+      workspaceRoot,
+      defaultModel: "gpt-5-codex",
+      createdAt: "2026-03-12T09:05:00.000Z",
+    });
+    const selectWorkspaceResponse = await selectWorkspaceWithRetry(ws, projectId);
+    expect(selectWorkspaceResponse.error).toBeUndefined();
+
+    const setTenantResponse = await sendRequest(ws, WS_METHODS.serverSetTenantProfile, {
+      label: "Contoso Dev",
+      tenantId: "11111111-1111-1111-1111-111111111111",
+      environmentId: "22222222-2222-2222-2222-222222222222",
+      environmentUrl: "https://contoso.crm.dynamics.com",
+    });
+    expect(setTenantResponse.error).toBeUndefined();
+    expect(setTenantResponse.result).toMatchObject({
+      status: "ready",
+      stage: "workbench",
+      tenant: {
+        id: "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        label: "Contoso Dev",
+        tenantId: "11111111-1111-1111-1111-111111111111",
+        environmentId: "22222222-2222-2222-2222-222222222222",
+        environmentUrl: "https://contoso.crm.dynamics.com",
+      },
+    });
+
+    const clearTenantResponse = await sendRequest(ws, WS_METHODS.serverClearTenantProfile);
+    expect(clearTenantResponse.error).toBeUndefined();
+    expect(clearTenantResponse.result).toMatchObject({
+      status: "starting",
+      stage: "tenant-selection",
+      tenant: null,
     });
   });
 

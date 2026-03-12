@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import type {
   AppSessionState,
   AuthContext,
@@ -13,23 +11,13 @@ import type {
 } from "@t3tools/contracts";
 
 interface CreateAppSessionStateInput {
-  readonly cwd: string;
+  readonly workspace?: WorkspaceProfile | null;
   readonly providerStatuses: ReadonlyArray<ServerProviderStatus>;
   readonly tenant?: TenantProfile | null;
   readonly modelProvider?: ModelProviderConfig;
   readonly activeApprovalCount?: number;
   readonly evidenceSummaryRefs?: ReadonlyArray<string>;
   readonly now?: string;
-}
-
-function createWorkspaceProfile(cwd: string, now: string): WorkspaceProfile {
-  const label = path.basename(cwd) || cwd;
-  return {
-    id: cwd,
-    label,
-    rootPath: cwd,
-    lastOpenedAt: now,
-  };
 }
 
 function toHealthCheck(status: ServerProviderStatus): SessionHealthCheck {
@@ -134,7 +122,7 @@ export function countPendingApprovals(
 }
 
 export function createAppSessionState({
-  cwd,
+  workspace = null,
   providerStatuses,
   tenant = null,
   modelProvider,
@@ -142,19 +130,24 @@ export function createAppSessionState({
   evidenceSummaryRefs = [],
   now = new Date().toISOString(),
 }: CreateAppSessionStateInput): AppSessionState {
-  const workspace = createWorkspaceProfile(cwd, now);
   const healthChecks = providerStatuses.map(toHealthCheck);
   const hasHealthError = healthChecks.some((check) => check.status === "error");
   const hasHealthWarning = healthChecks.some(
     (check) => check.status === "warning" || check.status === "unknown",
   );
 
-  const stage = hasHealthError || hasHealthWarning ? "tool-health-check" : tenant ? "workbench" : "tenant-selection";
+  const stage = !workspace
+    ? "workspace-selection"
+    : !tenant
+      ? "tenant-selection"
+      : hasHealthError || hasHealthWarning
+        ? "tool-health-check"
+        : "workbench";
   const status = hasHealthError
     ? "blocked"
     : hasHealthWarning
       ? "degraded"
-      : tenant
+      : workspace && tenant
         ? "ready"
         : "starting";
 

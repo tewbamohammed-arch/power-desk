@@ -36,7 +36,12 @@ import {
 import { KeybindingRule } from "./keybindings";
 import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
-import { ServerConfigUpdatedPayload, ServerSessionStateUpdatedPayload } from "./server";
+import {
+  ServerConfigUpdatedPayload,
+  ServerSelectWorkspaceInput,
+  ServerSessionStateUpdatedPayload,
+  ServerSetTenantProfileInput,
+} from "./server";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -75,6 +80,9 @@ export const WS_METHODS = {
   // Server meta
   serverGetConfig: "server.getConfig",
   serverGetSessionState: "server.getSessionState",
+  serverSelectWorkspace: "server.selectWorkspace",
+  serverSetTenantProfile: "server.setTenantProfile",
+  serverClearTenantProfile: "server.clearTenantProfile",
   serverUpsertKeybinding: "server.upsertKeybinding",
 } as const;
 
@@ -141,6 +149,9 @@ const WebSocketRequestBody = Schema.Union([
   // Server meta
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverGetSessionState, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.serverSelectWorkspace, ServerSelectWorkspaceInput),
+  tagRequestBody(WS_METHODS.serverSetTenantProfile, ServerSetTenantProfileInput),
+  tagRequestBody(WS_METHODS.serverClearTenantProfile, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
 ]);
 

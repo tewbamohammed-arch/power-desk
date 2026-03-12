@@ -194,6 +194,9 @@ export function createWsNativeApi(): NativeApi {
     server: {
       getConfig: () => transport.request(WS_METHODS.serverGetConfig),
       getSessionState: () => transport.request(WS_METHODS.serverGetSessionState),
+      selectWorkspace: (input) => transport.request(WS_METHODS.serverSelectWorkspace, input),
+      setTenantProfile: (input) => transport.request(WS_METHODS.serverSetTenantProfile, input),
+      clearTenantProfile: () => transport.request(WS_METHODS.serverClearTenantProfile),
       upsertKeybinding: (input) => transport.request(WS_METHODS.serverUpsertKeybinding, input),
     },
     orchestration: {

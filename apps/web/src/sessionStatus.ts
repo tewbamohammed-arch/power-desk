@@ -29,21 +29,20 @@ export function shouldShowSessionStatusStrip(state: AppSessionState): boolean {
 }
 
 export function describeSessionState(state: AppSessionState): string {
-  const primaryHealthCheck = findPrimaryHealthCheck(state.healthChecks);
-
-  if (primaryHealthCheck) {
-    return (
-      primaryHealthCheck.message ??
-      `${primaryHealthCheck.label} still needs verification before the session is fully ready.`
-    );
-  }
-
   if (!state.workspace) {
     return "Choose a workspace to initialize the session.";
   }
 
   if (!state.tenant) {
     return "Workspace is ready. Tenant selection is still pending.";
+  }
+
+  const primaryHealthCheck = findPrimaryHealthCheck(state.healthChecks);
+  if (primaryHealthCheck) {
+    return (
+      primaryHealthCheck.message ??
+      `${primaryHealthCheck.label} still needs verification before the session is fully ready.`
+    );
   }
 
   return "Session is ready.";

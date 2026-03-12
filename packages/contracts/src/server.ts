@@ -1,9 +1,9 @@
 import { Schema } from "effect";
-import { IsoDateTime, TrimmedNonEmptyString } from "./baseSchemas";
+import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./baseSchemas";
 import { KeybindingRule, ResolvedKeybindingsConfig } from "./keybindings";
 import { EditorId } from "./editor";
 import { ProviderKind } from "./orchestration";
-import { AppSessionState } from "./foundation";
+import { AppSessionState, TenantProfile } from "./foundation";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -77,6 +77,25 @@ export type ServerConfig = typeof ServerConfig.Type;
 export const ServerUpsertKeybindingInput = KeybindingRule;
 export type ServerUpsertKeybindingInput = typeof ServerUpsertKeybindingInput.Type;
 
+export const ServerSelectWorkspaceInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ServerSelectWorkspaceInput = typeof ServerSelectWorkspaceInput.Type;
+
+export const ServerSetTenantProfileInput = Schema.Struct({
+  label: TrimmedNonEmptyString,
+  tenantId: TrimmedNonEmptyString,
+  environmentId: Schema.optional(TrimmedNonEmptyString),
+  environmentUrl: Schema.optional(TrimmedNonEmptyString),
+});
+export type ServerSetTenantProfileInput = typeof ServerSetTenantProfileInput.Type;
+
+export const ServerClearTenantProfileResult = Schema.Struct({
+  tenant: Schema.Null,
+  updatedAt: IsoDateTime,
+});
+export type ServerClearTenantProfileResult = typeof ServerClearTenantProfileResult.Type;
+
 export const ServerUpsertKeybindingResult = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
@@ -91,3 +110,6 @@ export type ServerConfigUpdatedPayload = typeof ServerConfigUpdatedPayload.Type;
 
 export const ServerSessionStateUpdatedPayload = AppSessionState;
 export type ServerSessionStateUpdatedPayload = typeof ServerSessionStateUpdatedPayload.Type;
+
+export const ServerTenantProfile = TenantProfile;
+export type ServerTenantProfile = typeof ServerTenantProfile.Type;

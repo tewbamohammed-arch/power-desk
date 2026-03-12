@@ -84,6 +84,34 @@ it.effect("accepts server.getSessionState requests", () =>
   }),
 );
 
+it.effect("accepts server.selectWorkspace requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWebSocketRequest({
+      id: "req-session-2",
+      body: {
+        _tag: WS_METHODS.serverSelectWorkspace,
+        projectId: "project-1",
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.serverSelectWorkspace);
+  }),
+);
+
+it.effect("accepts server.setTenantProfile requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWebSocketRequest({
+      id: "req-session-3",
+      body: {
+        _tag: WS_METHODS.serverSetTenantProfile,
+        label: "Contoso Dev",
+        tenantId: "11111111-1111-1111-1111-111111111111",
+        environmentId: "22222222-2222-2222-2222-222222222222",
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.serverSetTenantProfile);
+  }),
+);
+
 it.effect("accepts typed websocket push envelopes with sequence", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeWsResponse({

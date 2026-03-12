@@ -4,6 +4,7 @@ import {
   createRootRouteWithContext,
   type ErrorComponentProps,
   useNavigate,
+  useParams,
   useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
@@ -136,6 +137,7 @@ function errorDetails(error: unknown): string {
 
 function EventRouter() {
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
+  const threads = useStore((store) => store.threads);
   const setProjectExpanded = useStore((store) => store.setProjectExpanded);
   const removeOrphanedTerminalStates = useTerminalStateStore(
     (store) => store.removeOrphanedTerminalStates,
@@ -143,10 +145,31 @@ function EventRouter() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const routeThreadId = useParams({
+    strict: false,
+    select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
+  });
   const pathnameRef = useRef(pathname);
   const handledBootstrapThreadIdRef = useRef<string | null>(null);
+  const selectedWorkspaceProjectIdRef = useRef<string | null>(null);
 
   pathnameRef.current = pathname;
+
+  useEffect(() => {
+    const api = readNativeApi();
+    if (!api || !routeThreadId) return;
+
+    const activeThread = threads.find((thread) => thread.id === routeThreadId);
+    if (!activeThread) return;
+    if (selectedWorkspaceProjectIdRef.current === activeThread.projectId) {
+      return;
+    }
+
+    selectedWorkspaceProjectIdRef.current = activeThread.projectId;
+    void api.server.selectWorkspace({ projectId: activeThread.projectId }).catch(() => {
+      selectedWorkspaceProjectIdRef.current = null;
+    });
+  }, [routeThreadId, threads]);
 
   useEffect(() => {
     const api = readNativeApi();

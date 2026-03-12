@@ -1,13 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 import { type ProviderKind } from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 
 import { MAX_CUSTOM_MODEL_LENGTH, useAppSettings } from "../appSettings";
 import { isElectron } from "../env";
 import { useTheme } from "../hooks/useTheme";
-import { serverConfigQueryOptions } from "../lib/serverReactQuery";
+import {
+  serverConfigQueryOptions,
+  serverQueryKeys,
+  serverSessionStateQueryOptions,
+} from "../lib/serverReactQuery";
 import { ensureNativeApi } from "../nativeApi";
 import { preferredTerminalEditor } from "../terminal-links";
 import { Button } from "../components/ui/button";
@@ -83,10 +87,21 @@ function SettingsRouteView() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { settings, defaults, updateSettings } = useAppSettings();
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
+  const serverSessionStateQuery = useQuery(serverSessionStateQueryOptions());
+  const queryClient = useQueryClient();
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
   const [openingDiagnosticsPath, setOpeningDiagnosticsPath] = useState<string | null>(null);
   const [openDiagnosticsError, setOpenDiagnosticsError] = useState<string | null>(null);
+  const [tenantDraft, setTenantDraft] = useState({
+    label: "",
+    tenantId: "",
+    environmentId: "",
+    environmentUrl: "",
+  });
+  const [tenantError, setTenantError] = useState<string | null>(null);
+  const [isSavingTenant, setIsSavingTenant] = useState(false);
+  const [isClearingTenant, setIsClearingTenant] = useState(false);
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
   >({
@@ -101,8 +116,26 @@ function SettingsRouteView() {
   const diagnostics = serverConfigQuery.data?.diagnostics ?? null;
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
   const runtime = serverConfigQuery.data?.runtime ?? null;
+  const workspace = serverSessionStateQuery.data?.workspace ?? null;
+  const tenant = serverSessionStateQuery.data?.tenant ?? null;
   const diagnosticsPending = serverConfigQuery.isPending;
   const diagnosticsAvailable = runtime !== null && diagnostics !== null;
+
+  useEffect(() => {
+    setTenantDraft({
+      label: tenant?.label ?? "",
+      tenantId: tenant?.tenantId ?? "",
+      environmentId: tenant?.environmentId ?? "",
+      environmentUrl: tenant?.environmentUrl ?? "",
+    });
+    setTenantError(null);
+  }, [
+    tenant?.environmentId,
+    tenant?.environmentUrl,
+    tenant?.id,
+    tenant?.label,
+    tenant?.tenantId,
+  ]);
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -136,6 +169,63 @@ function SettingsRouteView() {
         setOpeningDiagnosticsPath((currentPath) => (currentPath === targetPath ? null : currentPath));
       });
   }, []);
+
+  const saveTenantProfile = useCallback(() => {
+    const label = tenantDraft.label.trim();
+    const tenantId = tenantDraft.tenantId.trim();
+    const environmentId = tenantDraft.environmentId.trim();
+    const environmentUrl = tenantDraft.environmentUrl.trim();
+
+    if (!workspace) {
+      setTenantError("Select a workspace before saving tenant context.");
+      return;
+    }
+    if (label.length === 0 || tenantId.length === 0) {
+      setTenantError("Tenant label and tenant ID are required.");
+      return;
+    }
+
+    setTenantError(null);
+    setIsSavingTenant(true);
+    const api = ensureNativeApi();
+    void api.server
+      .setTenantProfile({
+        label,
+        tenantId,
+        ...(environmentId ? { environmentId } : {}),
+        ...(environmentUrl ? { environmentUrl } : {}),
+      })
+      .then((nextSessionState) => {
+        queryClient.setQueryData(serverQueryKeys.sessionState(), nextSessionState);
+      })
+      .catch((error) => {
+        setTenantError(
+          error instanceof Error ? error.message : "Unable to save tenant context.",
+        );
+      })
+      .finally(() => {
+        setIsSavingTenant(false);
+      });
+  }, [queryClient, tenantDraft, workspace]);
+
+  const clearTenantProfile = useCallback(() => {
+    setTenantError(null);
+    setIsClearingTenant(true);
+    const api = ensureNativeApi();
+    void api.server
+      .clearTenantProfile()
+      .then((nextSessionState) => {
+        queryClient.setQueryData(serverQueryKeys.sessionState(), nextSessionState);
+      })
+      .catch((error) => {
+        setTenantError(
+          error instanceof Error ? error.message : "Unable to clear tenant context.",
+        );
+      })
+      .finally(() => {
+        setIsClearingTenant(false);
+      });
+  }, [queryClient]);
 
   const addCustomModel = useCallback((provider: ProviderKind) => {
     const customModelInput = customModelInputByProvider[provider];
@@ -524,6 +614,112 @@ function SettingsRouteView() {
                 {openKeybindingsError ? (
                   <p className="text-xs text-destructive">{openKeybindingsError}</p>
                 ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Startup context</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Server-owned workspace and tenant context for the Phase 1 startup flow.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border border-border bg-background px-3 py-2">
+                  <p className="text-xs font-medium text-foreground">Selected workspace</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {workspace?.label ?? "No workspace selected yet."}
+                  </p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                    {workspace?.rootPath ??
+                      "Open or create a project thread to set the active workspace."}
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label htmlFor="tenant-label" className="block space-y-1">
+                    <span className="text-xs font-medium text-foreground">Tenant label</span>
+                    <Input
+                      id="tenant-label"
+                      value={tenantDraft.label}
+                      onChange={(event) =>
+                        setTenantDraft((current) => ({ ...current, label: event.target.value }))
+                      }
+                      placeholder="Contoso Dev"
+                      spellCheck={false}
+                    />
+                  </label>
+
+                  <label htmlFor="tenant-id" className="block space-y-1">
+                    <span className="text-xs font-medium text-foreground">Tenant ID</span>
+                    <Input
+                      id="tenant-id"
+                      value={tenantDraft.tenantId}
+                      onChange={(event) =>
+                        setTenantDraft((current) => ({ ...current, tenantId: event.target.value }))
+                      }
+                      placeholder="11111111-1111-1111-1111-111111111111"
+                      spellCheck={false}
+                    />
+                  </label>
+
+                  <label htmlFor="environment-id" className="block space-y-1">
+                    <span className="text-xs font-medium text-foreground">Environment ID</span>
+                    <Input
+                      id="environment-id"
+                      value={tenantDraft.environmentId}
+                      onChange={(event) =>
+                        setTenantDraft((current) => ({
+                          ...current,
+                          environmentId: event.target.value,
+                        }))
+                      }
+                      placeholder="Optional"
+                      spellCheck={false}
+                    />
+                  </label>
+
+                  <label htmlFor="environment-url" className="block space-y-1">
+                    <span className="text-xs font-medium text-foreground">Environment URL</span>
+                    <Input
+                      id="environment-url"
+                      value={tenantDraft.environmentUrl}
+                      onChange={(event) =>
+                        setTenantDraft((current) => ({
+                          ...current,
+                          environmentUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://org.crm.dynamics.com"
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    onClick={saveTenantProfile}
+                    disabled={!workspace || isSavingTenant}
+                  >
+                    {isSavingTenant ? "Saving..." : "Save tenant context"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={clearTenantProfile}
+                    disabled={!tenant || isClearingTenant}
+                  >
+                    {isClearingTenant ? "Clearing..." : "Clear tenant"}
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Workspace selection follows the active project thread. Tenant context is persisted
+                  by the server in the app state directory.
+                </p>
+                {tenantError ? <p className="text-xs text-destructive">{tenantError}</p> : null}
               </div>
             </section>
 

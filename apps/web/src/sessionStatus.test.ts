@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { describeSessionState, formatSessionStageLabel, shouldShowSessionStatusStrip } from "./sessionStatus";
 
 describe("sessionStatus", () => {
+  it("describes workspace-selection when no workspace is selected", () => {
+    const state = {
+      status: "starting",
+      stage: "workspace-selection",
+      workspace: null,
+      tenant: null,
+      auth: [],
+      healthChecks: [],
+      activeApprovalCount: 0,
+      evidenceSummaryRefs: [],
+      updatedAt: "2026-03-11T09:00:00.000Z",
+    } as const;
+
+    expect(formatSessionStageLabel(state.stage)).toBe("Workspace selection");
+    expect(describeSessionState(state)).toBe("Choose a workspace to initialize the session.");
+    expect(shouldShowSessionStatusStrip(state)).toBe(true);
+  });
+
   it("describes tenant-selection when workspace is ready but tenant is missing", () => {
     const state = {
       status: "starting",
@@ -38,7 +56,12 @@ describe("sessionStatus", () => {
         rootPath: "C:/Users/TAR/Projects/sp-power-desk",
         lastOpenedAt: "2026-03-11T09:00:00.000Z",
       },
-      tenant: null,
+      tenant: {
+        id: "tenant-1",
+        label: "Contoso Dev",
+        tenantId: "11111111-1111-1111-1111-111111111111",
+        lastValidatedAt: "2026-03-11T09:00:00.000Z",
+      },
       auth: [],
       healthChecks: [
         {
