@@ -131,3 +131,4 @@ Foundation and Shell should lock the host architecture, process boundaries, conf
 - `dd6b42e` `feat(foundation): push shell session state updates` - pushed session-state updates over WebSocket and surfaced startup/session status in the shell UI.
 - `537a904` `feat(foundation): expose server diagnostics baseline` - added server-owned runtime diagnostics metadata, log-path reporting, and a diagnostics baseline aligned with Scenario 8 handoff work.
 - `8c0a794` `fix(web): handle unavailable diagnostics state` - fixed the Settings diagnostics UI to handle older or not-yet-restarted backends without showing false in-progress states.
+- `9c29fb4` `feat(foundation): persist startup workspace and tenant context` - completed the server-owned startup-context slice by persisting workspace and tenant selection in `apps/server`, wiring startup-stage transitions through server APIs, and documenting the boundary in `docs/adr-0004-server-owned-startup-context.md`.
