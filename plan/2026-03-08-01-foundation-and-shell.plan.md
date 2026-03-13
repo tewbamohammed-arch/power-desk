@@ -10,11 +10,11 @@ If the shell, startup flow, auth boundaries, and process model remain ambiguous,
 - Workspace and package structure for the existing Bun monorepo.
 - Desktop shell ownership for the existing Electron host.
 - UI host guidance for the existing React workbench served by `apps/server`, not a new embedded-web shell decision.
-- Configuration approach with user-scoped JSON for non-secret settings.
+- Configuration approach with user-scoped JSON for app-wide non-secret settings plus project-owned startup context config for workspace-specific tenant metadata.
 - Secret storage approach with Windows Credential Manager or equivalent secure secret storage.
 - Local process model covering the desktop host process, local adapter host processes, and model-provider abstraction separated from tool runtime.
 - Logging and diagnostics baseline for actions, approvals, failures, and health checks.
-- Startup flow definition: select workspace -> select tenant -> verify tool health -> open workbench.
+- Startup flow definition: select workspace -> load project startup context -> confirm tenant -> verify tool health -> open workbench.
 - Public interfaces and types to define in this phase:
   - `WorkspaceProfile`
   - `TenantProfile`
@@ -57,7 +57,7 @@ If the shell, startup flow, auth boundaries, and process model remain ambiguous,
   - Assign ownership of native shell concerns to `apps/desktop`, orchestration plus runtime ownership to `apps/server`, UI hosting to `apps/web`, shared schemas to `packages/contracts`, and reusable helpers to `packages/shared`.
   - State the minimum ownership, dependency, and test-boundary rules needed so implementation can continue without inventing parallel package structures.
 - Configuration, secrets, and auth boundaries:
-  - Define user-scoped JSON config for non-secret settings such as workspace defaults, tenant aliases, environment preferences, and feature flags.
+  - Define user-scoped JSON config for non-secret settings such as workspace defaults, environment preferences, and feature flags, while keeping workspace-specific startup context in a project-owned config file.
   - Define secure secret storage for Microsoft auth refresh artifacts, model-provider credentials, and any browser-session bootstrap material that must not appear in plain text.
   - Split auth domains into OpenAI auth, Microsoft auth, and browser-session auth with distinct lifecycle rules, renewal paths, and log redaction requirements.
 - Process model and adapter hosting:
@@ -67,7 +67,7 @@ If the shell, startup flow, auth boundaries, and process model remain ambiguous,
   - Define `apps/server` as the owner of startup, session state, approvals, persistence, diagnostics metadata, and tool health verification so the workbench only opens after readiness checks produce a clear pass or actionable failure.
 - Shared types and startup flow:
   - Define the purpose and minimum fields for `WorkspaceProfile`, `TenantProfile`, `ToolExecutionRequest`, `ToolExecutionResult`, `AuthContext`, `ModelProviderConfig`, and `AppSessionState`.
-  - Map the startup flow from workspace selection through tenant confirmation and tool health checks into explicit state transitions that later UX can present clearly.
+  - Map the startup flow from workspace selection through project startup-context loading, tenant confirmation, and tool health checks into explicit state transitions that later UX can present clearly.
   - Reserve structured state for current repo, selected tenant, selected environment, adapter health, active approvals, and evidence summary links.
 - Logging and diagnostics baseline:
   - Define a structured logging schema for user actions, tool calls, approvals, failures, startup checks, and session boundaries.
@@ -117,3 +117,4 @@ Tool Runtime and Adapters should inherit the fixed host boundaries, shared sessi
 - `537a904` `feat(foundation): expose server diagnostics baseline` - added runtime diagnostics metadata, server-owned log paths, and a documented diagnostics baseline in `docs/adr-0002-server-diagnostics-baseline.md`.
 - `8c0a794` `fix(web): handle unavailable diagnostics state` - hardened the diagnostics surface so missing runtime metadata is shown as unavailable/restart-needed instead of a false loading state.
 - `9c29fb4` `feat(foundation): persist startup workspace and tenant context` - made `apps/server` own persisted startup context, added workspace/tenant selection APIs, moved startup stage derivation to server-backed workspace and tenant state, and documented the decision in `docs/adr-0004-server-owned-startup-context.md`.
+- `b8ba637c` `feat(foundation): store startup context in project config` - moved tenant startup context into per-project `.power-desk.config.json`, added project-scoped startup-context APIs and Settings/context-menu editing flows, reconciled the rebased T3 Code transport/runtime surfaces, and documented the decision in `docs/adr-0005-project-startup-context-config.md`.
