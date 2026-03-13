@@ -18,7 +18,6 @@ import {
 import type { MenuItemConstructorOptions } from "electron";
 import type {
   DesktopServerBootstrap,
-  DesktopTheme,
   DesktopUpdateActionResult,
   DesktopUpdateState,
 } from "@t3tools/contracts";
@@ -74,6 +73,7 @@ const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
 const BACKEND_BOOTSTRAP_TIMEOUT_MS = 15_000;
+type DesktopTheme = "light" | "dark" | "system";
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
 

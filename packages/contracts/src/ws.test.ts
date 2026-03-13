@@ -4,12 +4,19 @@ import { Effect, Schema } from "effect";
 import { ORCHESTRATION_WS_CHANNELS, ORCHESTRATION_WS_METHODS } from "./orchestration";
 import { WebSocketRequest, WsResponse, WS_CHANNELS, WS_METHODS } from "./ws";
 
-const decodeWebSocketRequest = Schema.decodeUnknownEffect(WebSocketRequest);
-const decodeWsResponse = Schema.decodeUnknownEffect(WsResponse);
+const decode = <S extends Schema.Top>(
+  schema: S,
+  input: unknown,
+): Effect.Effect<Schema.Schema.Type<S>, Schema.SchemaError, never> =>
+  Schema.decodeUnknownEffect(schema as never)(input) as Effect.Effect<
+    Schema.Schema.Type<S>,
+    Schema.SchemaError,
+    never
+  >;
 
 it.effect("accepts getTurnDiff requests when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWebSocketRequest({
+    const parsed = yield* decode(WebSocketRequest, {
       id: "req-1",
       body: {
         _tag: ORCHESTRATION_WS_METHODS.getTurnDiff,
@@ -25,7 +32,7 @@ it.effect("accepts getTurnDiff requests when fromTurnCount <= toTurnCount", () =
 it.effect("rejects getTurnDiff requests when fromTurnCount > toTurnCount", () =>
   Effect.gen(function* () {
     const result = yield* Effect.exit(
-      decodeWebSocketRequest({
+      decode(WebSocketRequest, {
         id: "req-1",
         body: {
           _tag: ORCHESTRATION_WS_METHODS.getTurnDiff,
@@ -41,7 +48,7 @@ it.effect("rejects getTurnDiff requests when fromTurnCount > toTurnCount", () =>
 
 it.effect("trims websocket request id and nested orchestration ids", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWebSocketRequest({
+    const parsed = yield* decode(WebSocketRequest, {
       id: " req-1 ",
       body: {
         _tag: ORCHESTRATION_WS_METHODS.getTurnDiff,
@@ -59,7 +66,7 @@ it.effect("trims websocket request id and nested orchestration ids", () =>
 );
 it.effect("accepts git.preparePullRequestThread requests", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWebSocketRequest({
+    const parsed = yield* decode(WebSocketRequest, {
       id: "req-pr-1",
       body: {
         _tag: WS_METHODS.gitPreparePullRequestThread,
@@ -74,7 +81,7 @@ it.effect("accepts git.preparePullRequestThread requests", () =>
 
 it.effect("accepts server.getSessionState requests", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWebSocketRequest({
+    const parsed = yield* decode(WebSocketRequest, {
       id: "req-session-1",
       body: {
         _tag: WS_METHODS.serverGetSessionState,
@@ -86,7 +93,7 @@ it.effect("accepts server.getSessionState requests", () =>
 
 it.effect("accepts server.selectWorkspace requests", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWebSocketRequest({
+    const parsed = yield* decode(WebSocketRequest, {
       id: "req-session-2",
       body: {
         _tag: WS_METHODS.serverSelectWorkspace,
@@ -99,10 +106,11 @@ it.effect("accepts server.selectWorkspace requests", () =>
 
 it.effect("accepts server.setTenantProfile requests", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWebSocketRequest({
+    const parsed = yield* decode(WebSocketRequest, {
       id: "req-session-3",
       body: {
         _tag: WS_METHODS.serverSetTenantProfile,
+        projectId: "project-1",
         label: "Contoso Dev",
         tenantId: "11111111-1111-1111-1111-111111111111",
         environmentId: "22222222-2222-2222-2222-222222222222",
@@ -112,9 +120,22 @@ it.effect("accepts server.setTenantProfile requests", () =>
   }),
 );
 
+it.effect("accepts server.getProjectStartupContext requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decode(WebSocketRequest, {
+      id: "req-session-4",
+      body: {
+        _tag: WS_METHODS.serverGetProjectStartupContext,
+        projectId: "project-1",
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.serverGetProjectStartupContext);
+  }),
+);
+
 it.effect("accepts typed websocket push envelopes with sequence", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWsResponse({
+    const parsed = yield* decode(WsResponse, {
       type: "push",
       sequence: 1,
       channel: WS_CHANNELS.serverWelcome,
@@ -136,7 +157,7 @@ it.effect("accepts typed websocket push envelopes with sequence", () =>
 
 it.effect("accepts server.sessionStateUpdated push envelopes", () =>
   Effect.gen(function* () {
-    const parsed = yield* decodeWsResponse({
+    const parsed = yield* decode(WsResponse, {
       type: "push",
       sequence: 2,
       channel: WS_CHANNELS.serverSessionStateUpdated,
@@ -169,7 +190,7 @@ it.effect("accepts server.sessionStateUpdated push envelopes", () =>
 it.effect("rejects push envelopes when channel payload does not match the channel schema", () =>
   Effect.gen(function* () {
     const result = yield* Effect.exit(
-      decodeWsResponse({
+      decode(WsResponse, {
         type: "push",
         sequence: 2,
         channel: ORCHESTRATION_WS_CHANNELS.domainEvent,

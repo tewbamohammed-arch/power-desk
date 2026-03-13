@@ -445,6 +445,22 @@ export const makeGitManager = Effect.gen(function* () {
     };
   });
 
+  const resolvePullRequest: GitManagerShape["resolvePullRequest"] = (input) =>
+    Effect.fail(
+      gitManagerError(
+        "resolvePullRequest",
+        `Pull request resolution is not available in this fork runtime for ${input.reference}.`,
+      ),
+    );
+
+  const preparePullRequestThread: GitManagerShape["preparePullRequestThread"] = (input) =>
+    Effect.fail(
+      gitManagerError(
+        "preparePullRequestThread",
+        `Pull request thread preparation is not available in this fork runtime for ${input.reference}.`,
+      ),
+    );
+
   const runFeatureBranchStep = (cwd: string, branch: string | null, commitMessage?: string) =>
     Effect.gen(function* () {
       const suggestion = yield* resolveCommitAndBranchSuggestion({
@@ -536,6 +552,8 @@ export const makeGitManager = Effect.gen(function* () {
 
   return {
     status,
+    resolvePullRequest,
+    preparePullRequestThread,
     runStackedAction,
   } satisfies GitManagerShape;
 });

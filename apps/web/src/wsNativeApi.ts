@@ -176,9 +176,6 @@ export function createWsNativeApi(): NativeApi {
       createBranch: (input) => transport.request(WS_METHODS.gitCreateBranch, input),
       checkout: (input) => transport.request(WS_METHODS.gitCheckout, input),
       init: (input) => transport.request(WS_METHODS.gitInit, input),
-      resolvePullRequest: (input) => transport.request(WS_METHODS.gitResolvePullRequest, input),
-      preparePullRequestThread: (input) =>
-        transport.request(WS_METHODS.gitPreparePullRequestThread, input),
     },
     contextMenu: {
       show: async <T extends string>(
@@ -195,8 +192,10 @@ export function createWsNativeApi(): NativeApi {
       getConfig: () => transport.request(WS_METHODS.serverGetConfig),
       getSessionState: () => transport.request(WS_METHODS.serverGetSessionState),
       selectWorkspace: (input) => transport.request(WS_METHODS.serverSelectWorkspace, input),
+      getProjectStartupContext: (input) =>
+        transport.request(WS_METHODS.serverGetProjectStartupContext, input),
       setTenantProfile: (input) => transport.request(WS_METHODS.serverSetTenantProfile, input),
-      clearTenantProfile: () => transport.request(WS_METHODS.serverClearTenantProfile),
+      clearTenantProfile: (input) => transport.request(WS_METHODS.serverClearTenantProfile, input),
       upsertKeybinding: (input) => transport.request(WS_METHODS.serverUpsertKeybinding, input),
     },
     orchestration: {

@@ -37,11 +37,11 @@ export interface StartupStateStoreShape {
   readonly clearWorkspaceSelection: (
     now?: string,
   ) => Effect.Effect<PersistedStartupState, StartupStateError>;
+  readonly clearTenant: (now?: string) => Effect.Effect<PersistedStartupState, StartupStateError>;
   readonly setTenant: (
     tenant: TenantProfile,
     now?: string,
   ) => Effect.Effect<PersistedStartupState, StartupStateError>;
-  readonly clearTenant: (now?: string) => Effect.Effect<PersistedStartupState, StartupStateError>;
 }
 
 export class StartupStateStore extends ServiceMap.Service<
@@ -134,6 +134,12 @@ const makeStartupStateStore: Effect.Effect<
         tenant: current.tenant,
         updatedAt: now,
       })),
+    clearTenant: (now = new Date().toISOString()) =>
+      updateState((current) => ({
+        workspaceSelection: current.workspaceSelection,
+        tenant: null,
+        updatedAt: now,
+      })),
     setTenant: (tenant, now = new Date().toISOString()) =>
       updateState((current) => ({
         workspaceSelection: current.workspaceSelection,
@@ -141,12 +147,6 @@ const makeStartupStateStore: Effect.Effect<
           ...tenant,
           lastValidatedAt: tenant.lastValidatedAt ?? now,
         },
-        updatedAt: now,
-      })),
-    clearTenant: (now = new Date().toISOString()) =>
-      updateState((current) => ({
-        workspaceSelection: current.workspaceSelection,
-        tenant: null,
         updatedAt: now,
       })),
   } satisfies StartupStateStoreShape;

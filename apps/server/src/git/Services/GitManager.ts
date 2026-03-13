@@ -7,6 +7,10 @@
  * @module GitManager
  */
 import {
+  GitPreparePullRequestThreadInput,
+  GitPreparePullRequestThreadResult,
+  GitPullRequestRefInput,
+  GitResolvePullRequestResult,
   GitRunStackedActionInput,
   GitRunStackedActionResult,
   GitStatusInput,
@@ -26,6 +30,14 @@ export interface GitManagerShape {
   readonly status: (
     input: GitStatusInput,
   ) => Effect.Effect<GitStatusResult, GitManagerServiceError>;
+
+  readonly resolvePullRequest: (
+    input: GitPullRequestRefInput,
+  ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
+
+  readonly preparePullRequestThread: (
+    input: GitPreparePullRequestThreadInput,
+  ) => Effect.Effect<GitPreparePullRequestThreadResult, GitManagerServiceError>;
 
   /**
    * Run a stacked Git action (`commit`, `commit_push`, `commit_push_pr`).

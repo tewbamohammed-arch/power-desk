@@ -28,6 +28,8 @@ import {
   type ServerProviderStatus,
   type KeybindingsConfig,
   type ResolvedKeybindingsConfig,
+  type WsPushChannel,
+  type WsPushMessage,
   type WsPush,
 } from "@t3tools/contracts";
 import { compileResolvedKeybindingRule, DEFAULT_KEYBINDINGS } from "./keybindings";
@@ -52,14 +54,54 @@ import { GitCore } from "./git/Services/GitCore.ts";
 import { GitCommandError, GitManagerError } from "./git/Errors.ts";
 import { MigrationError } from "@effect/sql-sqlite-bun/SqliteMigrator";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
+import { resolveProjectStartupContextPath } from "./projectStartupContext";
 import { StartupStateStoreLive } from "./startupState";
 
-interface PendingMessages {
-  queue: unknown[];
-  waiters: Array<(message: unknown) => void>;
+interface MessageChannel<T> {
+  queue: T[];
+  waiters: Array<{
+    resolve: (value: T) => void;
+    reject: (error: Error) => void;
+    timeoutId: ReturnType<typeof setTimeout> | null;
+  }>;
 }
 
-const pendingBySocket = new WeakMap<WebSocket, PendingMessages>();
+interface SocketChannels {
+  push: MessageChannel<WsPush>;
+  response: MessageChannel<WebSocketResponse>;
+}
+
+const channelsBySocket = new WeakMap<WebSocket, SocketChannels>();
+
+function enqueue<T>(channel: MessageChannel<T>, item: T) {
+  const waiter = channel.waiters.shift();
+  if (waiter) {
+    if (waiter.timeoutId !== null) clearTimeout(waiter.timeoutId);
+    waiter.resolve(item);
+    return;
+  }
+  channel.queue.push(item);
+}
+
+function dequeue<T>(channel: MessageChannel<T>, timeoutMs: number): Promise<T> {
+  const queued = channel.queue.shift();
+  if (queued !== undefined) {
+    return Promise.resolve(queued);
+  }
+
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve,
+      reject,
+      timeoutId: setTimeout(() => {
+        const index = channel.waiters.indexOf(waiter);
+        if (index >= 0) channel.waiters.splice(index, 1);
+        reject(new Error(`Timed out waiting for WebSocket message after ${timeoutMs}ms`));
+      }) as ReturnType<typeof setTimeout>,
+    };
+    channel.waiters.push(waiter);
+  });
+}
 
 const asEventId = (value: string): EventId => EventId.makeUnsafe(value);
 const asProviderItemId = (value: string): ProviderItemId => ProviderItemId.makeUnsafe(value);
@@ -220,17 +262,22 @@ function connectWs(port: number, token?: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const query = token ? `?token=${encodeURIComponent(token)}` : "";
     const ws = new WebSocket(`ws://127.0.0.1:${port}/${query}`);
-    const pending: PendingMessages = { queue: [], waiters: [] };
-    pendingBySocket.set(ws, pending);
+    const channels: SocketChannels = {
+      push: { queue: [], waiters: [] },
+      response: { queue: [], waiters: [] },
+    };
+    channelsBySocket.set(ws, channels);
 
     ws.on("message", (raw) => {
       const parsed = JSON.parse(String(raw));
-      const waiter = pending.waiters.shift();
-      if (waiter) {
-        waiter(parsed);
-        return;
+      if (isWsPushEnvelope(parsed)) {
+        enqueue(channels.push, parsed);
+      } else {
+        const response = asWebSocketResponse(parsed);
+        if (response) {
+          enqueue(channels.response, response);
+        }
       }
-      pending.queue.push(parsed);
     });
 
     ws.once("open", () => resolve(ws));
@@ -238,19 +285,75 @@ function connectWs(port: number, token?: string): Promise<WebSocket> {
   });
 }
 
-function waitForMessage(ws: WebSocket): Promise<unknown> {
-  const pending = pendingBySocket.get(ws);
-  if (!pending) {
+function isWsPushEnvelope(message: unknown): message is WsPush {
+  if (typeof message !== "object" || message === null) return false;
+  if (!("type" in message) || !("channel" in message)) return false;
+  return (message as { type?: unknown }).type === "push";
+}
+
+function waitForMessage(ws: WebSocket, timeoutMs = 5_000): Promise<WsPush | WebSocketResponse> {
+  const channels = channelsBySocket.get(ws);
+  if (!channels) {
     return Promise.reject(new Error("WebSocket not initialized"));
   }
 
-  const queued = pending.queue.shift();
-  if (queued !== undefined) {
-    return Promise.resolve(queued);
+  const queuedPush = channels.push.queue.shift();
+  if (queuedPush !== undefined) {
+    return Promise.resolve(queuedPush);
   }
 
-  return new Promise((resolve) => {
-    pending.waiters.push(resolve);
+  const queuedResponse = channels.response.queue.shift();
+  if (queuedResponse !== undefined) {
+    return Promise.resolve(queuedResponse);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      channels.push.waiters = channels.push.waiters.filter((entry) => entry !== pushWaiter);
+      channels.response.waiters = channels.response.waiters.filter(
+        (entry) => entry !== responseWaiter,
+      );
+      reject(new Error(`Timed out waiting for WebSocket message after ${timeoutMs}ms`));
+    }, timeoutMs) as ReturnType<typeof setTimeout>;
+
+    const settle = (value: WsPush | WebSocketResponse) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      channels.push.waiters = channels.push.waiters.filter((entry) => entry !== pushWaiter);
+      channels.response.waiters = channels.response.waiters.filter(
+        (entry) => entry !== responseWaiter,
+      );
+      resolve(value);
+    };
+
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      channels.push.waiters = channels.push.waiters.filter((entry) => entry !== pushWaiter);
+      channels.response.waiters = channels.response.waiters.filter(
+        (entry) => entry !== responseWaiter,
+      );
+      reject(error);
+    };
+
+    const pushWaiter = {
+      resolve: (value: WsPush) => settle(value),
+      reject: fail,
+      timeoutId,
+    };
+    const responseWaiter = {
+      resolve: (value: WebSocketResponse) => settle(value),
+      reject: fail,
+      timeoutId,
+    };
+
+    channels.push.waiters.push(pushWaiter);
+    channels.response.waiters.push(responseWaiter);
   });
 }
 
@@ -262,11 +365,23 @@ function asWebSocketResponse(message: unknown): WebSocketResponse | null {
   return message as WebSocketResponse;
 }
 
+async function connectAndAwaitWelcome(
+  port: number,
+  token?: string,
+): Promise<[WebSocket, WsPushMessage<typeof WS_CHANNELS.serverWelcome>]> {
+  const ws = await connectWs(port, token);
+  const welcome = await waitForPush(ws, WS_CHANNELS.serverWelcome);
+  return [ws, welcome];
+}
+
 async function sendRequest(
   ws: WebSocket,
   method: string,
   params?: unknown,
 ): Promise<WebSocketResponse> {
+  const channels = channelsBySocket.get(ws);
+  if (!channels) throw new Error("WebSocket not initialized");
+
   const id = crypto.randomUUID();
   const body =
     method === ORCHESTRATION_WS_METHODS.dispatchCommand
@@ -277,25 +392,18 @@ async function sendRequest(
   const message = JSON.stringify({ id, body });
   ws.send(message);
 
-  // Wait for response with matching id
   while (true) {
-    const parsed = asWebSocketResponse(await waitForMessage(ws));
-    if (!parsed) {
-      continue;
-    }
-    if (parsed.id === id) {
-      return parsed;
-    }
-    if (parsed.id === "unknown") {
-      return parsed;
+    const response = await dequeue(channels.response, 60_000);
+    if (response.id === id || response.id === "unknown") {
+      return response;
     }
   }
 }
 
-async function waitForPush(
+async function waitForPush<C extends WsPushChannel>(
   ws: WebSocket,
-  channel: string,
-  predicate?: (push: WsPush) => boolean,
+  channel: C,
+  predicate?: (push: WsPushMessage<C>) => boolean,
   maxMessages = 120,
   idleTimeoutMs = 5_000,
 ): Promise<WsPushMessage<C>> {
@@ -965,6 +1073,7 @@ describe("WebSocket Server", () => {
     expect(selectWorkspaceResponse.error).toBeUndefined();
 
     const setTenantResponse = await sendRequest(ws, WS_METHODS.serverSetTenantProfile, {
+      projectId,
       label: "Contoso Dev",
       tenantId: "11111111-1111-1111-1111-111111111111",
       environmentId: "22222222-2222-2222-2222-222222222222",
@@ -972,8 +1081,9 @@ describe("WebSocket Server", () => {
     });
     expect(setTenantResponse.error).toBeUndefined();
     expect(setTenantResponse.result).toMatchObject({
-      status: "ready",
-      stage: "workbench",
+      projectId,
+      workspaceRoot,
+      configPath: resolveProjectStartupContextPath(workspaceRoot),
       tenant: {
         id: "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         label: "Contoso Dev",
@@ -982,10 +1092,28 @@ describe("WebSocket Server", () => {
         environmentUrl: "https://contoso.crm.dynamics.com",
       },
     });
+    const savedSessionState = await sendRequest(ws, WS_METHODS.serverGetSessionState);
+    expect(savedSessionState.error).toBeUndefined();
+    expect(savedSessionState.result).toMatchObject({
+      status: "ready",
+      stage: "workbench",
+      tenant: {
+        label: "Contoso Dev",
+        tenantId: "11111111-1111-1111-1111-111111111111",
+      },
+    });
 
-    const clearTenantResponse = await sendRequest(ws, WS_METHODS.serverClearTenantProfile);
+    const clearTenantResponse = await sendRequest(ws, WS_METHODS.serverClearTenantProfile, {
+      projectId,
+    });
     expect(clearTenantResponse.error).toBeUndefined();
     expect(clearTenantResponse.result).toMatchObject({
+      projectId,
+      tenant: null,
+    });
+    const clearedSessionState = await sendRequest(ws, WS_METHODS.serverGetSessionState);
+    expect(clearedSessionState.error).toBeUndefined();
+    expect(clearedSessionState.result).toMatchObject({
       status: "starting",
       stage: "tenant-selection",
       tenant: null,
@@ -1126,11 +1254,7 @@ describe("WebSocket Server", () => {
     const malformedPush = await waitForPush(
       ws,
       WS_CHANNELS.serverConfigUpdated,
-      (push) =>
-        Array.isArray((push.data as { issues?: unknown[] }).issues) &&
-        Boolean((push.data as { issues: Array<{ kind: string }> }).issues[0]) &&
-        (push.data as { issues: Array<{ kind: string }> }).issues[0]!.kind ===
-          "keybindings.malformed-config",
+      (push) => push.data.issues.some((issue) => issue.kind === "keybindings.malformed-config"),
     );
     expect(malformedPush.data).toEqual({
       issues: [{ kind: "keybindings.malformed-config", message: expect.any(String) }],
@@ -1141,9 +1265,7 @@ describe("WebSocket Server", () => {
     const successPush = await waitForPush(
       ws,
       WS_CHANNELS.serverConfigUpdated,
-      (push) =>
-        Array.isArray((push.data as { issues?: unknown[] }).issues) &&
-        (push.data as { issues: unknown[] }).issues.length === 0,
+      (push) => push.data.issues.length === 0,
     );
     expect(successPush.data).toEqual({ issues: [], providers: defaultProviderStatuses });
   });
@@ -1888,7 +2010,12 @@ describe("WebSocket Server", () => {
 
     const status = vi.fn(() => Effect.succeed(statusResult));
     const runStackedAction = vi.fn(() => Effect.void as any);
-    const gitManager: GitManagerShape = { status, runStackedAction };
+    const gitManager: GitManagerShape = {
+      status,
+      resolvePullRequest: vi.fn(() => Effect.void as any),
+      preparePullRequestThread: vi.fn(() => Effect.void as any),
+      runStackedAction,
+    };
 
     server = await createTestServer({ cwd: "/test", gitManager });
     const addr = server.address();
@@ -1917,6 +2044,8 @@ describe("WebSocket Server", () => {
     );
     const gitManager: GitManagerShape = {
       status: vi.fn(() => Effect.void as any),
+      resolvePullRequest: vi.fn(() => Effect.void as any),
+      preparePullRequestThread: vi.fn(() => Effect.void as any),
       runStackedAction,
     };
 

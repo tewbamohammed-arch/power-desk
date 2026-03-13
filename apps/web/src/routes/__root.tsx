@@ -329,6 +329,11 @@ function EventRouter() {
     });
     const unsubServerSessionStateUpdated = onServerSessionStateUpdated((payload) => {
       queryClient.setQueryData(serverQueryKeys.sessionState(), payload);
+      if (payload.workspace?.id) {
+        void queryClient.invalidateQueries({
+          queryKey: serverQueryKeys.projectStartupContext(payload.workspace.id),
+        });
+      }
     });
     subscribed = true;
     return () => {

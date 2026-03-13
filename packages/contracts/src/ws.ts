@@ -38,6 +38,8 @@ import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
 import {
   ServerConfigUpdatedPayload,
+  ServerClearTenantProfileInput,
+  ServerGetProjectStartupContextInput,
   ServerSelectWorkspaceInput,
   ServerSessionStateUpdatedPayload,
   ServerSetTenantProfileInput,
@@ -81,6 +83,7 @@ export const WS_METHODS = {
   serverGetConfig: "server.getConfig",
   serverGetSessionState: "server.getSessionState",
   serverSelectWorkspace: "server.selectWorkspace",
+  serverGetProjectStartupContext: "server.getProjectStartupContext",
   serverSetTenantProfile: "server.setTenantProfile",
   serverClearTenantProfile: "server.clearTenantProfile",
   serverUpsertKeybinding: "server.upsertKeybinding",
@@ -150,8 +153,9 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverGetSessionState, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverSelectWorkspace, ServerSelectWorkspaceInput),
+  tagRequestBody(WS_METHODS.serverGetProjectStartupContext, ServerGetProjectStartupContextInput),
   tagRequestBody(WS_METHODS.serverSetTenantProfile, ServerSetTenantProfileInput),
-  tagRequestBody(WS_METHODS.serverClearTenantProfile, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.serverClearTenantProfile, ServerClearTenantProfileInput),
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
 ]);
 

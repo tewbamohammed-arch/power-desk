@@ -30,8 +30,15 @@ import type {
   TerminalSessionSnapshot,
   TerminalWriteInput,
 } from "./terminal";
-import type { ServerUpsertKeybindingInput, ServerUpsertKeybindingResult } from "./server";
-import type { ServerSelectWorkspaceInput, ServerSetTenantProfileInput } from "./server";
+import type {
+  ServerClearTenantProfileInput,
+  ServerGetProjectStartupContextInput,
+  ServerProjectStartupContext,
+  ServerSelectWorkspaceInput,
+  ServerSetTenantProfileInput,
+  ServerUpsertKeybindingInput,
+  ServerUpsertKeybindingResult,
+} from "./server";
 import type { AppSessionState } from "./foundation";
 import type {
   ClientOrchestrationCommand,
@@ -151,8 +158,13 @@ export interface NativeApi {
     getConfig: () => Promise<ServerConfig>;
     getSessionState: () => Promise<AppSessionState>;
     selectWorkspace: (input: ServerSelectWorkspaceInput) => Promise<AppSessionState>;
-    setTenantProfile: (input: ServerSetTenantProfileInput) => Promise<AppSessionState>;
-    clearTenantProfile: () => Promise<AppSessionState>;
+    getProjectStartupContext: (
+      input: ServerGetProjectStartupContextInput,
+    ) => Promise<ServerProjectStartupContext>;
+    setTenantProfile: (input: ServerSetTenantProfileInput) => Promise<ServerProjectStartupContext>;
+    clearTenantProfile: (
+      input: ServerClearTenantProfileInput,
+    ) => Promise<ServerProjectStartupContext>;
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
   };
   orchestration: {

@@ -82,7 +82,22 @@ export const ServerSelectWorkspaceInput = Schema.Struct({
 });
 export type ServerSelectWorkspaceInput = typeof ServerSelectWorkspaceInput.Type;
 
+export const ServerGetProjectStartupContextInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ServerGetProjectStartupContextInput = typeof ServerGetProjectStartupContextInput.Type;
+
+export const ServerProjectStartupContext = Schema.Struct({
+  projectId: ProjectId,
+  workspaceRoot: TrimmedNonEmptyString,
+  configPath: TrimmedNonEmptyString,
+  tenant: Schema.Union([TenantProfile, Schema.Null]),
+  updatedAt: IsoDateTime,
+});
+export type ServerProjectStartupContext = typeof ServerProjectStartupContext.Type;
+
 export const ServerSetTenantProfileInput = Schema.Struct({
+  projectId: ProjectId,
   label: TrimmedNonEmptyString,
   tenantId: TrimmedNonEmptyString,
   environmentId: Schema.optional(TrimmedNonEmptyString),
@@ -90,11 +105,10 @@ export const ServerSetTenantProfileInput = Schema.Struct({
 });
 export type ServerSetTenantProfileInput = typeof ServerSetTenantProfileInput.Type;
 
-export const ServerClearTenantProfileResult = Schema.Struct({
-  tenant: Schema.Null,
-  updatedAt: IsoDateTime,
+export const ServerClearTenantProfileInput = Schema.Struct({
+  projectId: ProjectId,
 });
-export type ServerClearTenantProfileResult = typeof ServerClearTenantProfileResult.Type;
+export type ServerClearTenantProfileInput = typeof ServerClearTenantProfileInput.Type;
 
 export const ServerUpsertKeybindingResult = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,

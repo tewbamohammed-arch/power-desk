@@ -49,6 +49,7 @@ import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
+import { preferredTerminalEditor } from "../terminal-links";
 import { toastManager } from "./ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
@@ -64,6 +65,16 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsibleContent } from "./ui/collapsible";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "./ui/dialog";
+import { Input } from "./ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   SidebarContent,
@@ -291,6 +302,21 @@ export default function Sidebar() {
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
+  const [startupContextDialogProjectId, setStartupContextDialogProjectId] = useState<ProjectId | null>(
+    null,
+  );
+  const [startupContextDraft, setStartupContextDraft] = useState({
+    label: "",
+    tenantId: "",
+    environmentId: "",
+    environmentUrl: "",
+  });
+  const [startupContextConfigPath, setStartupContextConfigPath] = useState<string | null>(null);
+  const [startupContextError, setStartupContextError] = useState<string | null>(null);
+  const [isLoadingStartupContext, setIsLoadingStartupContext] = useState(false);
+  const [isSavingStartupContext, setIsSavingStartupContext] = useState(false);
+  const [isClearingStartupContext, setIsClearingStartupContext] = useState(false);
+  const [isOpeningStartupContextFile, setIsOpeningStartupContextFile] = useState(false);
   const addProjectInputRef = useRef<HTMLInputElement | null>(null);
   const [renamingThreadId, setRenamingThreadId] = useState<ThreadId | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
@@ -313,6 +339,13 @@ export default function Sidebar() {
   const projectCwdById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
+  );
+  const startupContextDialogProject = useMemo(
+    () =>
+      startupContextDialogProjectId
+        ? projects.find((project) => project.id === startupContextDialogProjectId) ?? null
+        : null,
+    [projects, startupContextDialogProjectId],
   );
   const threadGitTargets = useMemo(
     () =>
@@ -439,7 +472,7 @@ export default function Sidebar() {
           createdAt,
         });
         await handleNewThread(projectId, {
-          envMode: appSettings.defaultThreadEnvMode,
+          envMode: "local",
         }).catch(() => undefined);
       } catch (error) {
         const description =
@@ -464,9 +497,152 @@ export default function Sidebar() {
       isAddingProject,
       projects,
       shouldBrowseForProjectImmediately,
-      appSettings.defaultThreadEnvMode,
     ],
   );
+
+  const openProjectStartupContextDialog = useCallback(
+    async (projectId: ProjectId) => {
+      const api = readNativeApi();
+      if (!api) return;
+
+      setStartupContextDialogProjectId(projectId);
+      setIsLoadingStartupContext(true);
+      setStartupContextError(null);
+
+      try {
+        const context = await api.server.getProjectStartupContext({ projectId });
+        setStartupContextDraft({
+          label: context.tenant?.label ?? "",
+          tenantId: context.tenant?.tenantId ?? "",
+          environmentId: context.tenant?.environmentId ?? "",
+          environmentUrl: context.tenant?.environmentUrl ?? "",
+        });
+        setStartupContextConfigPath(context.configPath);
+      } catch (error) {
+        setStartupContextConfigPath(null);
+        setStartupContextError(
+          error instanceof Error ? error.message : "Unable to load startup context.",
+        );
+      } finally {
+        setIsLoadingStartupContext(false);
+      }
+    },
+    [],
+  );
+
+  const openProjectStartupConfig = useCallback(
+    async (projectId: ProjectId) => {
+      const api = readNativeApi();
+      if (!api) return;
+
+      try {
+        const context = await api.server.getProjectStartupContext({ projectId });
+        await api.shell.openInEditor(context.configPath, preferredTerminalEditor());
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to open startup config",
+          description:
+            error instanceof Error ? error.message : "Unknown error opening project config.",
+        });
+      }
+    },
+    [],
+  );
+
+  const saveProjectStartupContext = useCallback(async () => {
+    const project = startupContextDialogProject;
+    if (!project) {
+      setStartupContextError("Select a project before saving startup context.");
+      return;
+    }
+
+    const label = startupContextDraft.label.trim();
+    const tenantId = startupContextDraft.tenantId.trim();
+    const environmentId = startupContextDraft.environmentId.trim();
+    const environmentUrl = startupContextDraft.environmentUrl.trim();
+
+    if (label.length === 0 || tenantId.length === 0) {
+      setStartupContextError("Tenant label and tenant ID are required.");
+      return;
+    }
+
+    const api = readNativeApi();
+    if (!api) return;
+
+    setStartupContextError(null);
+    setIsSavingStartupContext(true);
+    try {
+      const context = await api.server.setTenantProfile({
+        projectId: project.id,
+        label,
+        tenantId,
+        ...(environmentId ? { environmentId } : {}),
+        ...(environmentUrl ? { environmentUrl } : {}),
+      });
+      setStartupContextConfigPath(context.configPath);
+      setStartupContextDraft({
+        label: context.tenant?.label ?? "",
+        tenantId: context.tenant?.tenantId ?? "",
+        environmentId: context.tenant?.environmentId ?? "",
+        environmentUrl: context.tenant?.environmentUrl ?? "",
+      });
+    } catch (error) {
+      setStartupContextError(
+        error instanceof Error ? error.message : "Unable to save startup context.",
+      );
+    } finally {
+      setIsSavingStartupContext(false);
+    }
+  }, [startupContextDialogProject, startupContextDraft]);
+
+  const clearProjectStartupContext = useCallback(async () => {
+    const project = startupContextDialogProject;
+    if (!project) {
+      setStartupContextError("Select a project before clearing startup context.");
+      return;
+    }
+
+    const api = readNativeApi();
+    if (!api) return;
+
+    setStartupContextError(null);
+    setIsClearingStartupContext(true);
+    try {
+      const context = await api.server.clearTenantProfile({ projectId: project.id });
+      setStartupContextConfigPath(context.configPath);
+      setStartupContextDraft({
+        label: "",
+        tenantId: "",
+        environmentId: "",
+        environmentUrl: "",
+      });
+    } catch (error) {
+      setStartupContextError(
+        error instanceof Error ? error.message : "Unable to clear startup context.",
+      );
+    } finally {
+      setIsClearingStartupContext(false);
+    }
+  }, [startupContextDialogProject]);
+
+  const openStartupContextFileFromDialog = useCallback(async () => {
+    if (!startupContextConfigPath) return;
+    const api = readNativeApi();
+    if (!api) return;
+
+    setStartupContextError(null);
+    setIsOpeningStartupContextFile(true);
+    try {
+      await api.shell.openInEditor(startupContextConfigPath, preferredTerminalEditor());
+    } catch (error) {
+      setStartupContextError(
+        error instanceof Error ? error.message : "Unable to open startup config.",
+      );
+    } finally {
+      setIsOpeningStartupContextFile(false);
+    }
+  }, [startupContextConfigPath]);
 
   const handleAddProject = () => {
     void addProjectFromPath(newCwd);
@@ -827,9 +1003,21 @@ export default function Sidebar() {
       const api = readNativeApi();
       if (!api) return;
       const clicked = await api.contextMenu.show(
-        [{ id: "delete", label: "Remove project", destructive: true }],
+        [
+          { id: "edit-startup", label: "Edit startup context" },
+          { id: "open-startup-config", label: "Open startup config" },
+          { id: "delete", label: "Remove project", destructive: true },
+        ],
         position,
       );
+      if (clicked === "edit-startup") {
+        await openProjectStartupContextDialog(projectId);
+        return;
+      }
+      if (clicked === "open-startup-config") {
+        await openProjectStartupConfig(projectId);
+        return;
+      }
       if (clicked !== "delete") return;
 
       const project = projects.find((entry) => entry.id === projectId);
@@ -873,6 +1061,8 @@ export default function Sidebar() {
       clearComposerDraftForThread,
       clearProjectDraftThreadId,
       getDraftThreadByProjectId,
+      openProjectStartupConfig,
+      openProjectStartupContextDialog,
       projects,
       threads,
     ],
@@ -1366,7 +1556,7 @@ export default function Sidebar() {
                                       event.stopPropagation();
                                       void handleNewThread(project.id, {
                                         envMode: resolveSidebarNewThreadEnvMode({
-                                          defaultEnvMode: appSettings.defaultThreadEnvMode,
+                                          defaultEnvMode: "local",
                                         }),
                                       });
                                     }}
@@ -1642,6 +1832,166 @@ export default function Sidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
+      <Dialog
+        open={startupContextDialogProject !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setStartupContextDialogProjectId(null);
+          setStartupContextDraft({
+            label: "",
+            tenantId: "",
+            environmentId: "",
+            environmentUrl: "",
+          });
+          setStartupContextConfigPath(null);
+          setStartupContextError(null);
+          setIsLoadingStartupContext(false);
+          setIsSavingStartupContext(false);
+          setIsClearingStartupContext(false);
+          setIsOpeningStartupContextFile(false);
+        }}
+      >
+        <DialogPopup className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Edit Startup Context</DialogTitle>
+            <DialogDescription>
+              {startupContextDialogProject
+                ? `Save tenant details for ${startupContextDialogProject.name} in that project's startup config.`
+                : "Save project-specific tenant details."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <div className="rounded-lg border border-border bg-background px-3 py-2">
+              <p className="text-xs font-medium text-foreground">Project</p>
+              <p className="mt-1 text-sm text-foreground">
+                {startupContextDialogProject?.name ?? "Loading project..."}
+              </p>
+              <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                {startupContextDialogProject?.cwd ?? "Resolving workspace root..."}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-background px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-foreground">Config file</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                    {startupContextConfigPath ??
+                      (isLoadingStartupContext
+                        ? "Resolving project config path..."
+                        : "Project config is unavailable.")}
+                  </p>
+                </div>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={!startupContextConfigPath || isOpeningStartupContextFile}
+                  onClick={() => {
+                    void openStartupContextFileFromDialog();
+                  }}
+                >
+                  {isOpeningStartupContextFile ? "Opening..." : "Open"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-3">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-foreground">Tenant label</span>
+                <Input
+                  value={startupContextDraft.label}
+                  onChange={(event) =>
+                    setStartupContextDraft((current) => ({
+                      ...current,
+                      label: event.target.value,
+                    }))
+                  }
+                  placeholder="Contoso Dev"
+                  spellCheck={false}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-foreground">Tenant ID</span>
+                <Input
+                  value={startupContextDraft.tenantId}
+                  onChange={(event) =>
+                    setStartupContextDraft((current) => ({
+                      ...current,
+                      tenantId: event.target.value,
+                    }))
+                  }
+                  placeholder="11111111-1111-1111-1111-111111111111"
+                  spellCheck={false}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-foreground">Environment ID</span>
+                <Input
+                  value={startupContextDraft.environmentId}
+                  onChange={(event) =>
+                    setStartupContextDraft((current) => ({
+                      ...current,
+                      environmentId: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional"
+                  spellCheck={false}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-foreground">Environment URL</span>
+                <Input
+                  value={startupContextDraft.environmentUrl}
+                  onChange={(event) =>
+                    setStartupContextDraft((current) => ({
+                      ...current,
+                      environmentUrl: event.target.value,
+                    }))
+                  }
+                  placeholder="https://org.crm.dynamics.com"
+                  spellCheck={false}
+                />
+              </label>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              This data is saved in <code>.power-desk.config.json</code> inside the project root.
+            </p>
+            {startupContextError ? (
+              <p className="text-xs text-destructive">{startupContextError}</p>
+            ) : null}
+          </DialogPanel>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setStartupContextDialogProjectId(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isClearingStartupContext || isLoadingStartupContext}
+              onClick={() => {
+                void clearProjectStartupContext();
+              }}
+            >
+              {isClearingStartupContext ? "Clearing..." : "Clear"}
+            </Button>
+            <Button
+              type="button"
+              disabled={isSavingStartupContext || isLoadingStartupContext}
+              onClick={() => {
+                void saveProjectStartupContext();
+              }}
+            >
+              {isSavingStartupContext ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </>
   );
 }

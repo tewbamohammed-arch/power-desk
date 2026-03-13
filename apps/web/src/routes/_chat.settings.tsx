@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { type ProviderKind } from "@t3tools/contracts";
+import { type ProjectId, type ProviderKind } from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 
 import { MAX_CUSTOM_MODEL_LENGTH, useAppSettings } from "../appSettings";
@@ -93,6 +93,8 @@ function SettingsRouteView() {
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
   const [openingDiagnosticsPath, setOpeningDiagnosticsPath] = useState<string | null>(null);
   const [openDiagnosticsError, setOpenDiagnosticsError] = useState<string | null>(null);
+  const [isOpeningStartupConfig, setIsOpeningStartupConfig] = useState(false);
+  const [openStartupConfigError, setOpenStartupConfigError] = useState<string | null>(null);
   const [tenantDraft, setTenantDraft] = useState({
     label: "",
     tenantId: "",
@@ -118,6 +120,22 @@ function SettingsRouteView() {
   const runtime = serverConfigQuery.data?.runtime ?? null;
   const workspace = serverSessionStateQuery.data?.workspace ?? null;
   const tenant = serverSessionStateQuery.data?.tenant ?? null;
+  const startupContextQuery = useQuery({
+    queryKey: workspace
+      ? serverQueryKeys.projectStartupContext(workspace.id)
+      : (["server", "project-startup-context", "inactive"] as const),
+    queryFn: async () => {
+      if (!workspace) {
+        throw new Error("No workspace selected.");
+      }
+      const api = ensureNativeApi();
+      return api.server.getProjectStartupContext({ projectId: workspace.id as ProjectId });
+    },
+    enabled: workspace !== null,
+    staleTime: Infinity,
+  });
+  const startupContext = startupContextQuery.data;
+  const startupConfigPath = startupContext?.configPath ?? null;
   const diagnosticsPending = serverConfigQuery.isPending;
   const diagnosticsAvailable = runtime !== null && diagnostics !== null;
 
@@ -170,6 +188,23 @@ function SettingsRouteView() {
       });
   }, []);
 
+  const openStartupConfig = useCallback(() => {
+    if (!startupConfigPath) return;
+    setOpenStartupConfigError(null);
+    setIsOpeningStartupConfig(true);
+    const api = ensureNativeApi();
+    void api.shell
+      .openInEditor(startupConfigPath, preferredTerminalEditor())
+      .catch((error) => {
+        setOpenStartupConfigError(
+          error instanceof Error ? error.message : "Unable to open startup config.",
+        );
+      })
+      .finally(() => {
+        setIsOpeningStartupConfig(false);
+      });
+  }, [startupConfigPath]);
+
   const saveTenantProfile = useCallback(() => {
     const label = tenantDraft.label.trim();
     const tenantId = tenantDraft.tenantId.trim();
@@ -190,13 +225,17 @@ function SettingsRouteView() {
     const api = ensureNativeApi();
     void api.server
       .setTenantProfile({
+        projectId: workspace.id as ProjectId,
         label,
         tenantId,
         ...(environmentId ? { environmentId } : {}),
         ...(environmentUrl ? { environmentUrl } : {}),
       })
-      .then((nextSessionState) => {
-        queryClient.setQueryData(serverQueryKeys.sessionState(), nextSessionState);
+      .then((nextStartupContext) => {
+        queryClient.setQueryData(
+          serverQueryKeys.projectStartupContext(workspace.id),
+          nextStartupContext,
+        );
       })
       .catch((error) => {
         setTenantError(
@@ -209,13 +248,20 @@ function SettingsRouteView() {
   }, [queryClient, tenantDraft, workspace]);
 
   const clearTenantProfile = useCallback(() => {
+    if (!workspace) {
+      setTenantError("Select a workspace before clearing tenant context.");
+      return;
+    }
     setTenantError(null);
     setIsClearingTenant(true);
     const api = ensureNativeApi();
     void api.server
-      .clearTenantProfile()
-      .then((nextSessionState) => {
-        queryClient.setQueryData(serverQueryKeys.sessionState(), nextSessionState);
+      .clearTenantProfile({ projectId: workspace.id as ProjectId })
+      .then((nextStartupContext) => {
+        queryClient.setQueryData(
+          serverQueryKeys.projectStartupContext(workspace.id),
+          nextStartupContext,
+        );
       })
       .catch((error) => {
         setTenantError(
@@ -225,7 +271,7 @@ function SettingsRouteView() {
       .finally(() => {
         setIsClearingTenant(false);
       });
-  }, [queryClient]);
+  }, [queryClient, workspace]);
 
   const addCustomModel = useCallback((provider: ProviderKind) => {
     const customModelInput = customModelInputByProvider[provider];
@@ -638,6 +684,28 @@ function SettingsRouteView() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2 rounded-lg border border-border bg-background px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-foreground">Project config file</p>
+                        <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                          {startupConfigPath ??
+                            (workspace
+                              ? "Resolving project config path..."
+                              : "Select a workspace to load the project config.")}
+                        </p>
+                      </div>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={!startupConfigPath || isOpeningStartupConfig}
+                        onClick={openStartupConfig}
+                      >
+                        {isOpeningStartupConfig ? "Opening..." : "Open"}
+                      </Button>
+                    </div>
+                  </div>
+
                   <label htmlFor="tenant-label" className="block space-y-1">
                     <span className="text-xs font-medium text-foreground">Tenant label</span>
                     <Input
@@ -701,7 +769,7 @@ function SettingsRouteView() {
                   <Button
                     type="button"
                     onClick={saveTenantProfile}
-                    disabled={!workspace || isSavingTenant}
+                    disabled={isSavingTenant}
                   >
                     {isSavingTenant ? "Saving..." : "Save tenant context"}
                   </Button>
@@ -709,7 +777,7 @@ function SettingsRouteView() {
                     type="button"
                     variant="outline"
                     onClick={clearTenantProfile}
-                    disabled={!tenant || isClearingTenant}
+                    disabled={!workspace || !tenant || isClearingTenant}
                   >
                     {isClearingTenant ? "Clearing..." : "Clear tenant"}
                   </Button>
@@ -717,9 +785,12 @@ function SettingsRouteView() {
 
                 <p className="text-xs text-muted-foreground">
                   Workspace selection follows the active project thread. Tenant context is persisted
-                  by the server in the app state directory.
+                  in the selected project&apos;s <code>.power-desk.config.json</code> file.
                 </p>
                 {tenantError ? <p className="text-xs text-destructive">{tenantError}</p> : null}
+                {openStartupConfigError ? (
+                  <p className="text-xs text-destructive">{openStartupConfigError}</p>
+                ) : null}
               </div>
             </section>
 

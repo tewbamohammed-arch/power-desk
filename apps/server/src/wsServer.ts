@@ -15,11 +15,11 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   type ClientOrchestrationCommand,
   type OrchestrationCommand,
+  ProjectId,
   type TenantProfile,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-  ProjectId,
   ThreadId,
   WS_CHANNELS,
   WS_METHODS,
@@ -81,6 +81,12 @@ import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
 import { countPendingApprovals, createAppSessionState } from "./appSessionState";
 import { StartupStateStore } from "./startupState";
+import {
+  clearProjectStartupTenant,
+  ensureProjectStartupContext,
+  readProjectStartupContext,
+  setProjectStartupTenant,
+} from "./projectStartupContext";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -243,6 +249,24 @@ function toTenantProfile(input: {
   };
 }
 
+function toServerProjectStartupContext(input: {
+  readonly project: {
+    readonly id: ProjectId;
+    readonly workspaceRoot: string;
+  };
+  readonly configPath: string;
+  readonly tenant: TenantProfile | null;
+  readonly updatedAt: string;
+}) {
+  return {
+    projectId: input.project.id,
+    workspaceRoot: input.project.workspaceRoot,
+    configPath: input.configPath,
+    tenant: input.tenant,
+    updatedAt: input.updatedAt,
+  };
+}
+
 const encodeWsResponse = Schema.encodeEffect(Schema.fromJsonString(WsResponse));
 const decodeWebSocketRequest = decodeJsonResult(WebSocketRequest);
 
@@ -339,11 +363,6 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     logOutgoingPush,
   });
   yield* readiness.markPushBusReady;
-  yield* keybindingsManager.start.pipe(
-    Effect.mapError(
-      (cause) => new ServerLifecycleError({ operation: "keybindingsRuntimeStart", cause }),
-    ),
-  );
   yield* readiness.markKeybindingsReady;
 
   const normalizeDispatchCommand = Effect.fnUntraced(function* (input: {
@@ -368,16 +387,24 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     });
 
     if (input.command.type === "project.create") {
+      const workspaceRoot = yield* normalizeProjectWorkspaceRoot(input.command.workspaceRoot);
+      yield* ensureProjectStartupContext({
+        workspaceRoot,
+      });
       return {
         ...input.command,
-        workspaceRoot: yield* normalizeProjectWorkspaceRoot(input.command.workspaceRoot),
+        workspaceRoot,
       } satisfies OrchestrationCommand;
     }
 
     if (input.command.type === "project.meta.update" && input.command.workspaceRoot !== undefined) {
+      const workspaceRoot = yield* normalizeProjectWorkspaceRoot(input.command.workspaceRoot);
+      yield* ensureProjectStartupContext({
+        workspaceRoot,
+      });
       return {
         ...input.command,
-        workspaceRoot: yield* normalizeProjectWorkspaceRoot(input.command.workspaceRoot),
+        workspaceRoot,
       } satisfies OrchestrationCommand;
     }
 
@@ -685,22 +712,62 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           )
         : null;
 
+    const projectStartupContext =
+      selectedProject !== null
+        ? yield* readProjectStartupContext({
+            workspaceRoot: selectedProject.workspaceRoot,
+          })
+        : null;
+
+    const migratedProjectStartupContext =
+      selectedProject !== null &&
+      projectStartupContext !== null &&
+      projectStartupContext.document.startupContext.tenant === null &&
+      normalizedStartupState.tenant !== null
+        ? yield* setProjectStartupTenant({
+            workspaceRoot: selectedProject.workspaceRoot,
+            tenant: normalizedStartupState.tenant,
+            now: normalizedStartupState.updatedAt,
+          }).pipe(
+            Effect.tap(() => startupStateStore.clearTenant(normalizedStartupState.updatedAt)),
+          )
+        : projectStartupContext;
+
     return {
       providerStatuses,
       snapshot,
       startupState: normalizedStartupState,
       workspace,
+      projectStartupContext: migratedProjectStartupContext,
     };
   });
 
   const readServerSessionState = Effect.fnUntraced(function* () {
-    const { providerStatuses, snapshot, startupState, workspace } = yield* readResolvedSessionContext();
+    const { providerStatuses, snapshot, workspace, projectStartupContext } =
+      yield* readResolvedSessionContext();
     return createAppSessionState({
       workspace,
       providerStatuses,
-      tenant: startupState.tenant,
+      tenant: projectStartupContext?.document.startupContext.tenant ?? null,
       activeApprovalCount: countPendingApprovals(snapshot.threads),
     });
+  });
+
+  const resolveStartupContextProject = Effect.fnUntraced(function* (projectId: ProjectId) {
+    const snapshot = yield* projectionReadModelQuery.getSnapshot();
+    const project =
+      snapshot.projects.find((entry) => entry.id === projectId && entry.deletedAt === null) ?? null;
+    if (!project) {
+      return yield* new RouteRequestError({
+        message: `Unknown workspace project: ${projectId}`,
+      });
+    }
+    return project;
+  });
+
+  const readStartupContextSelection = Effect.fnUntraced(function* () {
+    const startupState = yield* startupStateStore.get;
+    return startupState.workspaceSelection?.projectId ?? null;
   });
 
   const publishCurrentSessionState = Effect.fnUntraced(function* () {
@@ -714,16 +781,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
     pushBus.publishAll(ORCHESTRATION_WS_CHANNELS.domainEvent, event).pipe(
-      Effect.flatMap(() =>
-        Effect.forkIn(
-          publishCurrentSessionState(),
-          subscriptionsScope,
-        ),
-      ),
+      Effect.flatMap(() => publishCurrentSessionState().pipe(Effect.forkIn(subscriptionsScope))),
     ),
   ).pipe(Effect.forkIn(subscriptionsScope));
 
-  yield* Stream.runForEach(keybindingsManager.streamChanges, (event) =>
+  yield* Stream.runForEach(keybindingsManager.changes, (event) =>
     readProviderStatuses().pipe(
       Effect.flatMap((providerStatuses) =>
         pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
@@ -807,7 +869,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   }
 
   const runtimeServices = yield* Effect.services<
-    ServerRuntimeServices | ServerConfig | FileSystem.FileSystem | Path.Path
+    | ServerRuntimeServices
+    | ServerConfig
+    | FileSystem.FileSystem
+    | Path.Path
+    | StartupStateStore
   >();
   const runPromise = Effect.runPromiseWith(runtimeServices);
 
@@ -1010,31 +1076,32 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
       case WS_METHODS.serverSelectWorkspace: {
         const body = stripRequestTag(request.body);
-        const snapshot = yield* projectionReadModelQuery.getSnapshot();
-        const selectedProject = snapshot.projects.find(
-          (project) => project.id === body.projectId && project.deletedAt === null,
-        );
-        if (!selectedProject) {
-          return yield* new RouteRequestError({
-            message: `Unknown workspace project: ${body.projectId}`,
-          });
-        }
+        yield* resolveStartupContextProject(body.projectId);
         yield* startupStateStore.selectWorkspace(body.projectId);
         return yield* publishCurrentSessionState();
       }
 
+      case WS_METHODS.serverGetProjectStartupContext: {
+        const body = stripRequestTag(request.body);
+        const project = yield* resolveStartupContextProject(body.projectId);
+        const context = yield* ensureProjectStartupContext({
+          workspaceRoot: project.workspaceRoot,
+        });
+        return toServerProjectStartupContext({
+          project,
+          configPath: context.configPath,
+          tenant: context.document.startupContext.tenant,
+          updatedAt: context.document.updatedAt,
+        });
+      }
+
       case WS_METHODS.serverSetTenantProfile: {
         const body = stripRequestTag(request.body);
-        const sessionState = yield* readServerSessionState();
-        if (!sessionState.workspace) {
-          return yield* new RouteRequestError({
-            message: "Select a workspace before saving tenant context.",
-          });
-        }
-
+        const project = yield* resolveStartupContextProject(body.projectId);
         const now = new Date().toISOString();
-        yield* startupStateStore.setTenant(
-          toTenantProfile({
+        const context = yield* setProjectStartupTenant({
+          workspaceRoot: project.workspaceRoot,
+          tenant: toTenantProfile({
             now,
             label: body.label,
             tenantId: body.tenantId,
@@ -1042,13 +1109,34 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
             ...(body.environmentUrl ? { environmentUrl: body.environmentUrl } : {}),
           }),
           now,
-        );
-        return yield* publishCurrentSessionState();
+        });
+        if ((yield* readStartupContextSelection()) === project.id) {
+          yield* publishCurrentSessionState();
+        }
+        return toServerProjectStartupContext({
+          project,
+          configPath: context.configPath,
+          tenant: context.document.startupContext.tenant,
+          updatedAt: context.document.updatedAt,
+        });
       }
 
-      case WS_METHODS.serverClearTenantProfile:
-        yield* startupStateStore.clearTenant();
-        return yield* publishCurrentSessionState();
+      case WS_METHODS.serverClearTenantProfile: {
+        const body = stripRequestTag(request.body);
+        const project = yield* resolveStartupContextProject(body.projectId);
+        const context = yield* clearProjectStartupTenant({
+          workspaceRoot: project.workspaceRoot,
+        });
+        if ((yield* readStartupContextSelection()) === project.id) {
+          yield* publishCurrentSessionState();
+        }
+        return toServerProjectStartupContext({
+          project,
+          configPath: context.configPath,
+          tenant: context.document.startupContext.tenant,
+          updatedAt: context.document.updatedAt,
+        });
+      }
 
       case WS_METHODS.serverUpsertKeybinding: {
         const body = stripRequestTag(request.body);

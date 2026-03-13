@@ -1,5 +1,9 @@
-import type { Thread } from "../types";
+import type { DraftThreadEnvMode } from "../composerDraftStore";
+import { cn } from "../lib/utils";
 import { findLatestProposedPlan, isLatestTurnSettled } from "../session-logic";
+import type { Thread } from "../types";
+
+export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 
 export interface ThreadStatusPill {
   label:
@@ -28,6 +32,48 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   const lastVisitedAt = Date.parse(thread.lastVisitedAt);
   if (Number.isNaN(lastVisitedAt)) return true;
   return completedAt > lastVisitedAt;
+}
+
+export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
+  if (target === null) return true;
+  return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
+}
+
+export function resolveThreadRowClassName(input: {
+  isActive: boolean;
+  isSelected: boolean;
+}): string {
+  const baseClassName =
+    "h-7 w-full translate-x-0 cursor-default justify-start px-2 text-left select-none focus-visible:ring-0";
+
+  if (input.isSelected && input.isActive) {
+    return cn(
+      baseClassName,
+      "bg-primary/22 text-foreground font-medium hover:bg-primary/26 hover:text-foreground dark:bg-primary/30 dark:hover:bg-primary/36",
+    );
+  }
+
+  if (input.isSelected) {
+    return cn(
+      baseClassName,
+      "bg-primary/15 text-foreground hover:bg-primary/19 hover:text-foreground dark:bg-primary/22 dark:hover:bg-primary/28",
+    );
+  }
+
+  if (input.isActive) {
+    return cn(
+      baseClassName,
+      "bg-accent/85 text-foreground font-medium hover:bg-accent hover:text-foreground dark:bg-accent/55 dark:hover:bg-accent/70",
+    );
+  }
+
+  return cn(baseClassName, "text-muted-foreground hover:bg-accent hover:text-foreground");
+}
+
+export function resolveSidebarNewThreadEnvMode(input: {
+  defaultEnvMode?: DraftThreadEnvMode;
+}): DraftThreadEnvMode {
+  return input.defaultEnvMode === "worktree" ? "worktree" : "local";
 }
 
 export function resolveThreadStatusPill(input: {
