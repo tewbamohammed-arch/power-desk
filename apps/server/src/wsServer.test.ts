@@ -56,6 +56,7 @@ import { MigrationError } from "@effect/sql-sqlite-bun/SqliteMigrator";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { resolveProjectStartupContextPath } from "./projectStartupContext";
 import { StartupStateStoreLive } from "./startupState";
+import { UserSettingsStoreLive } from "./userSettings";
 
 interface MessageChannel<T> {
   queue: T[];
@@ -634,6 +635,10 @@ describe("WebSocket Server", () => {
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(serverConfigLayer),
     );
+    const userSettingsLayer = UserSettingsStoreLive.pipe(
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(serverConfigLayer),
+    );
     const dependenciesLayer = Layer.empty.pipe(
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(serverConfigLayer),
@@ -642,6 +647,7 @@ describe("WebSocket Server", () => {
       Layer.provideMerge(providerHealthLayer),
       Layer.provideMerge(openLayer),
       Layer.provideMerge(startupStateLayer),
+      Layer.provideMerge(userSettingsLayer),
     );
     const runtimeServices = await Effect.runPromise(
       Layer.build(dependenciesLayer).pipe(Scope.provide(scope)),

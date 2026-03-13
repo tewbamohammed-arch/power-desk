@@ -429,6 +429,43 @@ describe("wsNativeApi", () => {
     });
   });
 
+  it("forwards user settings reads and writes to the websocket server methods", async () => {
+    requestMock.mockResolvedValue({
+      configPath: "C:/Users/TAR/.t3/dev/settings.json",
+      settings: {
+        theme: "dark",
+        codexBinaryPath: "",
+        codexHomePath: "",
+        confirmThreadDelete: true,
+        enableAssistantStreaming: false,
+        customCodexModels: [],
+      },
+      updatedAt: "2026-03-14T08:00:00.000Z",
+    });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.server.getUserSettings();
+    await api.server.updateUserSettings({
+      theme: "dark",
+      codexBinaryPath: "C:/Tools/codex.exe",
+      codexHomePath: "C:/Users/TAR/.codex",
+      confirmThreadDelete: false,
+      enableAssistantStreaming: true,
+      customCodexModels: ["custom/internal-model"],
+    });
+
+    expect(requestMock).toHaveBeenNthCalledWith(1, WS_METHODS.serverGetUserSettings);
+    expect(requestMock).toHaveBeenNthCalledWith(2, WS_METHODS.serverUpdateUserSettings, {
+      theme: "dark",
+      codexBinaryPath: "C:/Tools/codex.exe",
+      codexHomePath: "C:/Users/TAR/.codex",
+      confirmThreadDelete: false,
+      enableAssistantStreaming: true,
+      customCodexModels: ["custom/internal-model"],
+    });
+  });
+
   it("forwards tenant profile updates to the websocket server method", async () => {
     requestMock.mockResolvedValue({ status: "starting" });
     const { createWsNativeApi } = await import("./wsNativeApi");

@@ -81,6 +81,7 @@ import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
 import { countPendingApprovals, createAppSessionState } from "./appSessionState";
 import { StartupStateStore } from "./startupState";
+import { UserSettingsStore } from "./userSettings";
 import {
   clearProjectStartupTenant,
   ensureProjectStartupContext,
@@ -104,6 +105,7 @@ export interface ServerShape {
     | FileSystem.FileSystem
     | Path.Path
     | StartupStateStore
+    | UserSettingsStore
   >;
 
   /**
@@ -285,7 +287,8 @@ export type ServerRuntimeServices =
   | TerminalManager
   | Keybindings
   | Open
-  | AnalyticsService;
+  | AnalyticsService
+  | UserSettingsStore;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",
@@ -331,6 +334,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const startupStateStore = yield* StartupStateStore;
+  const userSettingsStore = yield* UserSettingsStore;
 
   yield* keybindingsManager.syncDefaultKeybindingsOnStartup.pipe(
     Effect.catch((error) =>
@@ -1073,6 +1077,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
       case WS_METHODS.serverGetSessionState:
         return yield* readServerSessionState();
+
+      case WS_METHODS.serverGetUserSettings:
+        return yield* userSettingsStore.get;
+
+      case WS_METHODS.serverUpdateUserSettings: {
+        const body = stripRequestTag(request.body);
+        return yield* userSettingsStore.update(body);
+      }
 
       case WS_METHODS.serverSelectWorkspace: {
         const body = stripRequestTag(request.body);

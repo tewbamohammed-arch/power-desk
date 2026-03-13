@@ -192,6 +192,8 @@ export function createWsNativeApi(): NativeApi {
       getConfig: () => transport.request(WS_METHODS.serverGetConfig),
       getSessionState: () => transport.request(WS_METHODS.serverGetSessionState),
       selectWorkspace: (input) => transport.request(WS_METHODS.serverSelectWorkspace, input),
+      getUserSettings: () => transport.request(WS_METHODS.serverGetUserSettings),
+      updateUserSettings: (input) => transport.request(WS_METHODS.serverUpdateUserSettings, input),
       getProjectStartupContext: (input) =>
         transport.request(WS_METHODS.serverGetProjectStartupContext, input),
       setTenantProfile: (input) => transport.request(WS_METHODS.serverSetTenantProfile, input),

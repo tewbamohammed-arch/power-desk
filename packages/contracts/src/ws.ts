@@ -43,6 +43,7 @@ import {
   ServerSelectWorkspaceInput,
   ServerSessionStateUpdatedPayload,
   ServerSetTenantProfileInput,
+  ServerUpdateUserSettingsInput,
 } from "./server";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
@@ -83,6 +84,8 @@ export const WS_METHODS = {
   serverGetConfig: "server.getConfig",
   serverGetSessionState: "server.getSessionState",
   serverSelectWorkspace: "server.selectWorkspace",
+  serverGetUserSettings: "server.getUserSettings",
+  serverUpdateUserSettings: "server.updateUserSettings",
   serverGetProjectStartupContext: "server.getProjectStartupContext",
   serverSetTenantProfile: "server.setTenantProfile",
   serverClearTenantProfile: "server.clearTenantProfile",
@@ -153,6 +156,8 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverGetSessionState, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverSelectWorkspace, ServerSelectWorkspaceInput),
+  tagRequestBody(WS_METHODS.serverGetUserSettings, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.serverUpdateUserSettings, ServerUpdateUserSettingsInput),
   tagRequestBody(WS_METHODS.serverGetProjectStartupContext, ServerGetProjectStartupContextInput),
   tagRequestBody(WS_METHODS.serverSetTenantProfile, ServerSetTenantProfileInput),
   tagRequestBody(WS_METHODS.serverClearTenantProfile, ServerClearTenantProfileInput),

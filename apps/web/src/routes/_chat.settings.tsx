@@ -86,10 +86,12 @@ function patchCustomModels(provider: ProviderKind, models: string[]) {
 
 function SettingsRouteView() {
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const { settings, defaults, updateSettings } = useAppSettings();
+  const { settings, defaults, updateSettings, configPath: appSettingsConfigPath } = useAppSettings();
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const serverSessionStateQuery = useQuery(serverSessionStateQueryOptions());
   const queryClient = useQueryClient();
+  const [isOpeningAppSettings, setIsOpeningAppSettings] = useState(false);
+  const [openAppSettingsError, setOpenAppSettingsError] = useState<string | null>(null);
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
   const [openingDiagnosticsPath, setOpeningDiagnosticsPath] = useState<string | null>(null);
@@ -155,6 +157,22 @@ function SettingsRouteView() {
     tenant?.label,
     tenant?.tenantId,
   ]);
+
+  const openAppSettingsFile = useCallback(() => {
+    if (!appSettingsConfigPath) return;
+    setOpenAppSettingsError(null);
+    setIsOpeningAppSettings(true);
+    const api = ensureNativeApi();
+    void openInPreferredEditor(api, appSettingsConfigPath)
+      .catch((error) => {
+        setOpenAppSettingsError(
+          error instanceof Error ? error.message : "Unable to open app settings file.",
+        );
+      })
+      .finally(() => {
+        setIsOpeningAppSettings(false);
+      });
+  }, [appSettingsConfigPath]);
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -624,6 +642,41 @@ function SettingsRouteView() {
                   </Button>
                 </div>
               ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">App settings</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Server-owned user settings persist in a JSON file under the app state directory.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-foreground">Config file path</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                      {appSettingsConfigPath ?? "Resolving app settings path..."}
+                    </p>
+                  </div>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={!appSettingsConfigPath || isOpeningAppSettings}
+                    onClick={openAppSettingsFile}
+                  >
+                    {isOpeningAppSettings ? "Opening..." : "Open settings.json"}
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  This file owns non-secret app configuration for the current user.
+                </p>
+                {openAppSettingsError ? (
+                  <p className="text-xs text-destructive">{openAppSettingsError}</p>
+                ) : null}
+              </div>
             </section>
 
             <section className="rounded-2xl border border-border bg-card p-5">

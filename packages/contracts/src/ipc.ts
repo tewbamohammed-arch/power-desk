@@ -36,6 +36,8 @@ import type {
   ServerProjectStartupContext,
   ServerSelectWorkspaceInput,
   ServerSetTenantProfileInput,
+  ServerUpdateUserSettingsInput,
+  ServerUserSettings,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server";
@@ -158,6 +160,8 @@ export interface NativeApi {
     getConfig: () => Promise<ServerConfig>;
     getSessionState: () => Promise<AppSessionState>;
     selectWorkspace: (input: ServerSelectWorkspaceInput) => Promise<AppSessionState>;
+    getUserSettings: () => Promise<ServerUserSettings>;
+    updateUserSettings: (input: ServerUpdateUserSettingsInput) => Promise<ServerUserSettings>;
     getProjectStartupContext: (
       input: ServerGetProjectStartupContextInput,
     ) => Promise<ServerProjectStartupContext>;

@@ -4,6 +4,7 @@ import { KeybindingRule, ResolvedKeybindingsConfig } from "./keybindings";
 import { EditorId } from "./editor";
 import { ProviderKind } from "./orchestration";
 import { AppSessionState, TenantProfile } from "./foundation";
+import { AppSettings } from "./appSettings";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -96,6 +97,13 @@ export const ServerProjectStartupContext = Schema.Struct({
 });
 export type ServerProjectStartupContext = typeof ServerProjectStartupContext.Type;
 
+export const ServerUserSettings = Schema.Struct({
+  configPath: TrimmedNonEmptyString,
+  settings: AppSettings,
+  updatedAt: IsoDateTime,
+});
+export type ServerUserSettings = typeof ServerUserSettings.Type;
+
 export const ServerSetTenantProfileInput = Schema.Struct({
   projectId: ProjectId,
   label: TrimmedNonEmptyString,
@@ -109,6 +117,9 @@ export const ServerClearTenantProfileInput = Schema.Struct({
   projectId: ProjectId,
 });
 export type ServerClearTenantProfileInput = typeof ServerClearTenantProfileInput.Type;
+
+export const ServerUpdateUserSettingsInput = AppSettings;
+export type ServerUpdateUserSettingsInput = typeof ServerUpdateUserSettingsInput.Type;
 
 export const ServerUpsertKeybindingResult = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,

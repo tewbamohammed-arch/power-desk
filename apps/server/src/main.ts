@@ -33,6 +33,7 @@ import {
   formatDesktopServerBootstrapStdout,
 } from "./desktopServerBootstrap";
 import { StartupStateStoreLive } from "./startupState";
+import { UserSettingsStoreLive } from "./userSettings";
 
 export class StartupError extends Data.TaggedError("StartupError")<{
   readonly message: string;
@@ -216,6 +217,9 @@ const LayerLive = (input: CliInput) =>
     const startupStateLayer = StartupStateStoreLive.pipe(
       Layer.provideMerge(serverConfigLayer),
     );
+    const userSettingsLayer = UserSettingsStoreLive.pipe(
+      Layer.provideMerge(serverConfigLayer),
+    );
     const serverLoggerLayer = ServerLoggerLive.pipe(Layer.provideMerge(serverConfigLayer));
     const runtimeServicesLayer = makeServerRuntimeServicesLayer().pipe(
       Layer.provideMerge(serverConfigLayer),
@@ -232,6 +236,7 @@ const LayerLive = (input: CliInput) =>
       Layer.provideMerge(persistenceLayer),
       Layer.provideMerge(analyticsLayer),
       Layer.provideMerge(startupStateLayer),
+      Layer.provideMerge(userSettingsLayer),
       Layer.provideMerge(serverLoggerLayer),
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(providerLayer),

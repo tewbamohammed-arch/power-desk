@@ -1,39 +1,34 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import type { ThemePreference } from "@t3tools/contracts";
 
-type Theme = "light" | "dark" | "system";
+import { getAppSettingsSnapshot, useAppSettings } from "../appSettings";
+
+const MEDIA_QUERY = "(prefers-color-scheme: dark)";
+
 type ThemeSnapshot = {
-  theme: Theme;
   systemDark: boolean;
 };
 
-const STORAGE_KEY = "t3code:theme";
-const MEDIA_QUERY = "(prefers-color-scheme: dark)";
-
 let listeners: Array<() => void> = [];
 let lastSnapshot: ThemeSnapshot | null = null;
-function emitChange() {
-  for (const listener of listeners) listener();
+
+function emitChange(): void {
+  for (const listener of listeners) {
+    listener();
+  }
 }
 
 function getSystemDark(): boolean {
   return window.matchMedia(MEDIA_QUERY).matches;
 }
 
-function getStored(): Theme {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === "light" || raw === "dark" || raw === "system") return raw;
-  return "system";
-}
-
-function applyTheme(theme: Theme, suppressTransitions = false) {
+function applyTheme(theme: ThemePreference, suppressTransitions = false) {
   if (suppressTransitions) {
     document.documentElement.classList.add("no-transitions");
   }
   const isDark = theme === "dark" || (theme === "system" && getSystemDark());
   document.documentElement.classList.toggle("dark", isDark);
   if (suppressTransitions) {
-    // Force a reflow so the no-transitions class takes effect before removal
-    // oxlint-disable-next-line no-unused-expressions
     document.documentElement.offsetHeight;
     requestAnimationFrame(() => {
       document.documentElement.classList.remove("no-transitions");
@@ -41,65 +36,58 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 }
 
-// Apply immediately on module load to prevent flash
-applyTheme(getStored());
+// Apply immediately on module load to minimize theme flash before hydration.
+applyTheme(getAppSettingsSnapshot().theme);
 
 function getSnapshot(): ThemeSnapshot {
-  const theme = getStored();
-  const systemDark = theme === "system" ? getSystemDark() : false;
-
-  if (lastSnapshot && lastSnapshot.theme === theme && lastSnapshot.systemDark === systemDark) {
+  const systemDark = getSystemDark();
+  if (lastSnapshot && lastSnapshot.systemDark === systemDark) {
     return lastSnapshot;
   }
 
-  lastSnapshot = { theme, systemDark };
+  lastSnapshot = { systemDark };
   return lastSnapshot;
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.push(listener);
 
-  // Listen for system preference changes
   const mq = window.matchMedia(MEDIA_QUERY);
   const handleChange = () => {
-    if (getStored() === "system") applyTheme("system", true);
+    if (getAppSettingsSnapshot().theme === "system") {
+      applyTheme("system", true);
+    }
     emitChange();
   };
   mq.addEventListener("change", handleChange);
 
-  // Listen for storage changes from other tabs
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) {
-      applyTheme(getStored(), true);
-      emitChange();
-    }
-  };
-  window.addEventListener("storage", handleStorage);
-
   return () => {
-    listeners = listeners.filter((l) => l !== listener);
+    listeners = listeners.filter((entry) => entry !== listener);
     mq.removeEventListener("change", handleChange);
-    window.removeEventListener("storage", handleStorage);
   };
 }
 
 export function useTheme() {
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot);
-  const theme = snapshot.theme;
+  const { settings, updateSettings } = useAppSettings();
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, () => ({
+    systemDark: false,
+  }));
+  const theme = settings.theme;
 
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (snapshot.systemDark ? "dark" : "light") : theme;
 
-  const setTheme = useCallback((next: Theme) => {
-    localStorage.setItem(STORAGE_KEY, next);
-    applyTheme(next, true);
-    emitChange();
-  }, []);
+  const setTheme = useCallback(
+    (next: ThemePreference) => {
+      updateSettings({ theme: next });
+      applyTheme(next, true);
+    },
+    [updateSettings],
+  );
 
-  // Keep DOM in sync on mount/change
   useEffect(() => {
     applyTheme(theme);
-  }, [theme]);
+  }, [theme, snapshot.systemDark]);
 
   return { theme, setTheme, resolvedTheme } as const;
 }
