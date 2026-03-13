@@ -293,7 +293,7 @@ describe("wsNativeApi", () => {
       metadata: {},
       type: "project.created",
       payload: {
-        projectId: "project-1",
+        projectId: ProjectId.makeUnsafe("project-1"),
         title: "Project",
         workspaceRoot: "/tmp/workspace",
         defaultModel: null,
@@ -339,7 +339,7 @@ describe("wsNativeApi", () => {
       metadata: {},
       type: "project.created",
       payload: {
-        projectId: "project-2",
+        projectId: ProjectId.makeUnsafe("project-2"),
         title: "Project 2",
         workspaceRoot: "/tmp/workspace-2",
         defaultModel: null,

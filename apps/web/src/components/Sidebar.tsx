@@ -39,6 +39,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useAppSettings } from "../appSettings";
 import { isElectron } from "../env";
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
+import { openInPreferredEditor } from "../editorPreferences";
 import { isMacPlatform, newCommandId, newProjectId } from "../lib/utils";
 import { useStore } from "../store";
 import { shortcutLabelForCommand } from "../keybindings";
@@ -537,7 +538,7 @@ export default function Sidebar() {
 
       try {
         const context = await api.server.getProjectStartupContext({ projectId });
-        await api.shell.openInEditor(context.configPath, preferredTerminalEditor());
+        await openInPreferredEditor(api, context.configPath);
       } catch (error) {
         toastManager.add({
           type: "error",

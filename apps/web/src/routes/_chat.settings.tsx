@@ -12,6 +12,7 @@ import {
   serverQueryKeys,
   serverSessionStateQueryOptions,
 } from "../lib/serverReactQuery";
+import { openInPreferredEditor } from "../editorPreferences";
 import { ensureNativeApi } from "../nativeApi";
 import { preferredTerminalEditor } from "../terminal-links";
 import { Button } from "../components/ui/button";
@@ -160,8 +161,7 @@ function SettingsRouteView() {
     setOpenKeybindingsError(null);
     setIsOpeningKeybindings(true);
     const api = ensureNativeApi();
-    void api.shell
-      .openInEditor(keybindingsConfigPath, preferredTerminalEditor())
+    void openInPreferredEditor(api, keybindingsConfigPath)
       .catch((error) => {
         setOpenKeybindingsError(
           error instanceof Error ? error.message : "Unable to open keybindings file.",
@@ -193,8 +193,7 @@ function SettingsRouteView() {
     setOpenStartupConfigError(null);
     setIsOpeningStartupConfig(true);
     const api = ensureNativeApi();
-    void api.shell
-      .openInEditor(startupConfigPath, preferredTerminalEditor())
+    void openInPreferredEditor(api, startupConfigPath)
       .catch((error) => {
         setOpenStartupConfigError(
           error instanceof Error ? error.message : "Unable to open startup config.",
