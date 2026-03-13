@@ -35,6 +35,7 @@ const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.Comm
 interface PublishIconBackup {
   readonly targetPath: string;
   readonly backupPath: string;
+  readonly hadOriginal: boolean;
 }
 
 const applyPublishIconOverrides = Effect.fn("applyPublishIconOverrides")(function* (
@@ -55,15 +56,14 @@ const applyPublishIconOverrides = Effect.fn("applyPublishIconOverrides")(functio
         message: `Missing publish icon source: ${sourcePath}`,
       });
     }
-    if (!(yield* fs.exists(targetPath))) {
-      return yield* new CliError({
-        message: `Missing publish icon target: ${targetPath}. Run the build subcommand first.`,
-      });
-    }
 
-    yield* fs.copyFile(targetPath, backupPath);
+    yield* fs.makeDirectory(path.dirname(targetPath), { recursive: true });
+    const hadOriginal = yield* fs.exists(targetPath);
+    if (hadOriginal) {
+      yield* fs.copyFile(targetPath, backupPath);
+    }
     yield* fs.copyFile(sourcePath, targetPath);
-    backups.push({ targetPath, backupPath });
+    backups.push({ targetPath, backupPath, hadOriginal });
   }
 
   yield* Effect.log("[cli] Applied publish icon overrides to dist/client");
@@ -75,6 +75,12 @@ const restorePublishIconOverrides = Effect.fn("restorePublishIconOverrides")(fun
 ) {
   const fs = yield* FileSystem.FileSystem;
   for (const backup of backups) {
+    if (!backup.hadOriginal) {
+      if (yield* fs.exists(backup.targetPath)) {
+        yield* fs.remove(backup.targetPath);
+      }
+      continue;
+    }
     if (!(yield* fs.exists(backup.backupPath))) {
       continue;
     }
@@ -98,12 +104,8 @@ const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")
         message: `Missing development icon source: ${sourcePath}`,
       });
     }
-    if (!(yield* fs.exists(targetPath))) {
-      return yield* new CliError({
-        message: `Missing development icon target: ${targetPath}. Build web first.`,
-      });
-    }
 
+    yield* fs.makeDirectory(path.dirname(targetPath), { recursive: true });
     yield* fs.copyFile(sourcePath, targetPath);
   }
 
