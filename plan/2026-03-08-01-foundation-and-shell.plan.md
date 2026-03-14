@@ -3,6 +3,12 @@
 ## Intent
 Establish the host application shape for Power Desk so every later phase can build on a stable Windows desktop shell, clear process boundaries, and explicit configuration and auth domains.
 
+## Status
+Completed on 2026-03-14.
+
+Phase 1 is complete for roadmap sequencing and handoff into Phase 2.
+The completion tag is `power-desk-phase-1-complete` at `1a52aa0f`.
+
 ## Why This Phase Exists
 If the shell, startup flow, auth boundaries, and process model remain ambiguous, every later decision about tools, agents, approvals, and diagnostics will drift. This phase fixes the base architecture before runtime and UX complexity arrive.
 
@@ -120,3 +126,4 @@ Tool Runtime and Adapters should inherit the fixed host boundaries, shared sessi
 - `b8ba637c` `feat(foundation): store startup context in project config` - moved tenant startup context into per-project `.power-desk.config.json`, added project-scoped startup-context APIs and Settings/context-menu editing flows, reconciled the rebased T3 Code transport/runtime surfaces, and documented the decision in `docs/adr-0005-project-startup-context-config.md`.
 - `82678974` `fix(web): open startup config in available editor` - hardened the startup-context support flow so project config files open through an installed editor instead of failing on stale editor preferences.
 - `30f51ffe` `feat(foundation): move app settings into server state` - completed the Phase 1 non-secret settings boundary by moving app-wide settings out of browser storage and into server-owned `settings.json`, exposing typed Native API access, and documenting the decision in `docs/adr-0006-server-owned-user-settings.md`.
+- `1a52aa0f` `fix(dev): restore desktop startup on main` - restored the main-branch development startup path at the Phase 1 completion tip and is the commit tagged as `power-desk-phase-1-complete`.
